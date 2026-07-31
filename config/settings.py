@@ -96,6 +96,18 @@ class PipelineConfig(BaseModel):
     retries: int = 2
 
 
+class QualityConfig(BaseModel):
+    # Deterministic score penalties subtracted from a perfect 100 per issue level.
+    penalty_error: float = 25.0
+    penalty_warning: float = 5.0
+    penalty_info: float = 1.0
+    # Script readability thresholds (Flesch Reading Ease, 0–100).
+    readability_min: float = 30.0
+    readability_max: float = 90.0
+    # Duration mismatch tolerance (fraction of the expected duration).
+    duration_tolerance: float = 0.15
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="ACCE_",
@@ -117,3 +129,4 @@ class Settings(BaseSettings):
     research: ResearchConfig = ResearchConfig()
     script: ScriptConfig = ScriptConfig()
     pipeline: PipelineConfig = PipelineConfig()
+    quality: QualityConfig = QualityConfig()

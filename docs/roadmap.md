@@ -11,7 +11,7 @@ Status legend: ✅ done · 🔜 in progress · ⏳ not started
 | 5 | Media search | Pexels/Pixabay/Wikimedia providers + asset downloads + license handling | ✅ |
 | 6 | Audio | TTS narration, music by style (Pixabay Music / Local / Stub), narration+music mix, sentence subtitles | ✅ |
 | 7 | Production | ffmpeg rendering (timeline assembly) + thumbnail | ✅ |
-| 8 | Quality | Hard failures + optional re-render of failing stages | ⏳ |
+| 8 | Quality | Deterministic validation, severity, scoring, retry recommendation | ✅ |
 | 9 | UI | Next.js + Tailwind dashboard (stage, logs, progress, preview, download) | ⏳ |
 | 10 | End-to-end | Publishable MP4 from a topic with minimal manual work | ⏳ |
 
@@ -134,11 +134,31 @@ Status legend: ✅ done · 🔜 in progress · ⏳ not started
   stub stays key-free/runnable, and the FFmpeg renderer is unit-testable
   without the binary (command generation + failure handling).
 
-## Milestone 8 — quality
+## Milestone 8 — quality (done)
 
-- Treat warnings/errors as gating signals; re-render only the failing stage
-  (orchestrator already retries only the failing stage).
-- **Definition of done:** a job either ships or reports exactly which stage to fix.
+- **Deterministic validation for every stage** (analysis/reporting only — never
+  modifies artifacts): research (missing/empty/unverified facts), script
+  (empty sections, duration mismatch, readability thresholds), scenes (missing
+  visual descriptions/keywords, invalid durations, timeline continuity), media
+  (placeholder assets, missing local files, license info, duplicate assets),
+  audio (missing narration/subtitles, duration mismatch, missing music —
+  warning only), production (missing video/timeline/render manifest/render
+  log), and overall (final duration consistency, artifact + pipeline
+  completeness).
+- **Severity**: every issue is INFO / WARNING / ERROR; only ERRORs block
+  publishing (`passed`).
+- **Retry recommendation**: `recommended_retry_stage` = earliest pipeline-stage
+  among ERROR issues — advisory only; the orchestrator owns retry execution.
+- **Fix suggestions**: each issue carries a human-readable `suggested_fix`
+  (e.g. missing narration → "Regenerate the Audio stage."); never auto-executed.
+- **Scoring**: deterministic 0–100 (`100 − Σ penalty[level]`, configurable via
+  `QualityConfig`), no AI.
+- **`quality.json`** carries `passed`, `score`, `issues`, `warnings`, `errors`,
+  `recommended_retry_stage`, and `metadata` (score/warnings/errors/passed/
+  pipeline_complete/generated_at + per-stage counts) so future UI versions can
+  chart quality trends without a database.
+- **Definition of done:** a job either ships or reports exactly which stage to
+  fix, with a deterministic score and human-readable guidance.
 
 ## Milestone 9 — UI
 

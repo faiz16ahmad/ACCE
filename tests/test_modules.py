@@ -122,4 +122,4 @@ def test_quality_module(make_ctx, research, script, scenes, media, audio):
 
     result = _exercise(DefaultQualityModule(), ctx, QualityReport)
     assert result.output.passed is True
-    assert ctx.store.exists(Stage.QUALITY, "report.json")
+    assert ctx.store.exists(Stage.QUALITY, "quality.json")

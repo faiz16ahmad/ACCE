@@ -95,6 +95,32 @@ def media():
 
 @pytest.fixture
 def audio(tmp_path):
-    from modules.audio.schemas import AudioOutput
+    """A realistic AudioOutput with real narration/music/subtitle files.
 
-    return AudioOutput(master_path=Path(tmp_path) / "audio" / "master_audio.txt", tracks=[], mix_plan_path=None)
+    Duration matches the two 20s scenes fixture so quality duration checks pass.
+    """
+    from modules.audio.schemas import AudioMetadata, AudioOutput, AudioTrack
+
+    audio_dir = Path(tmp_path) / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    narration = audio_dir / "narration.txt"
+    narration.write_text("n1\n\nn2", encoding="utf-8")
+    mixed = audio_dir / "master_audio.txt"
+    mixed.write_text("mix", encoding="utf-8")
+    subtitles = audio_dir / "subtitles.srt"
+    subtitles.write_text(
+        "1\n00:00:00,000 --> 00:00:20,000\nn1\n\n2\n00:00:20,000 --> 00:00:40,000\nn2\n",
+        encoding="utf-8",
+    )
+    return AudioOutput(
+        narration_path=narration,
+        mixed_audio_path=mixed,
+        subtitle_path=subtitles,
+        master_path=mixed,
+        duration=40.0,
+        tracks=[
+            AudioTrack(kind="narration", provider="stub", title="n1", local_path=narration, duration=20.0),
+            AudioTrack(kind="music", provider="stub", title="bed", duration=40.0),
+        ],
+        metadata=AudioMetadata(duration=40.0, narration_duration=40.0, engine="stub"),
+    )

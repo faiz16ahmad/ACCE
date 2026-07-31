@@ -67,7 +67,7 @@ def build_orchestrator(
             voice=settings.tts.voice,
         ),
         Stage.PRODUCTION: DefaultProductionModule(settings.production),
-        Stage.QUALITY: DefaultQualityModule(),
+        Stage.QUALITY: DefaultQualityModule(config=settings.quality),
     }
     return PipelineOrchestrator(
         modules,
