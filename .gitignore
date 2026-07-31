@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Env / secrets (keep .env.example tracked)
+.env
+.env.local
+.env.*.local
+
+# ACCE runtime artifacts
+out/
+.cache/
+*.mp4
+*.srt
+*.wav
+*.mp3
+
+# Test / lint / type tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.pyre/
+.pytype/
+
+# Logs
+*.log
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Node (milestone 8 dashboard)
+node_modules/
+.next/
+
+# Claude Code local config (keep .claude/settings.json if added later)
+.claude/settings.local.json
