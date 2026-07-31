@@ -23,6 +23,9 @@ dev = [
 gemini = [
     "google-genai>=1.0",
 ]
+tts = [
+    "edge-tts>=6.1",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

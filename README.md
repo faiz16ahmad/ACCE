@@ -57,6 +57,11 @@ uv run python main.py generate --topic "How neural networks learn" \
 # and an API key (ACCE_LLM__API_KEY or GEMINI_API_KEY), install the extra:
 uv sync --extra gemini
 
+# Real, key-free narration via Edge TTS (optional extra). If the extra isn't
+# installed (or a voice is unknown), ACCE falls back to stub narration:
+uv sync --extra tts
+# then set ACCE_TTS__PROVIDER=edge in .env (voice: ACCE_TTS__VOICE=en-US-AriaNeural)
+
 # Inspect a finished job:
 uv run python main.py status <job_id>
 

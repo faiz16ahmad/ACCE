@@ -17,6 +17,9 @@ export function VideoPreview({ artifacts }: { artifacts: ArtifactDto[] }) {
         asset.name === "final_video.mp4" || asset.mime.startsWith("video/"),
     ) ?? null;
 
+  const thumbnail =
+    artifacts.find((asset) => asset.name === "thumbnail.jpg") ?? null;
+
   if (!video) {
     return (
       <EmptyState
@@ -28,6 +31,7 @@ export function VideoPreview({ artifacts }: { artifacts: ArtifactDto[] }) {
   }
 
   const src = artifactUrl(video.url);
+  const poster = thumbnail ? artifactUrl(thumbnail.url) : undefined;
 
   return (
     <div className="flex flex-col gap-4">
@@ -41,6 +45,7 @@ export function VideoPreview({ artifacts }: { artifacts: ArtifactDto[] }) {
           <video
             key={src}
             src={src}
+            poster={poster}
             controls
             playsInline
             className="aspect-video w-full"
@@ -53,14 +58,26 @@ export function VideoPreview({ artifacts }: { artifacts: ArtifactDto[] }) {
         <p className="truncate text-sm text-muted">
           <span className="font-mono">{video.name}</span> · {formatBytes(video.size)}
         </p>
-        <a
-          href={src}
-          download
-          className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-border px-4 text-sm font-medium transition-colors hover:bg-surface-2"
-        >
-          <IconDownload className="h-4 w-4" />
-          Download
-        </a>
+        <div className="flex shrink-0 items-center gap-2">
+          {thumbnail ? (
+            <a
+              href={poster}
+              download
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-sm font-medium transition-colors hover:bg-surface-2"
+            >
+              <IconDownload className="h-4 w-4" />
+              Thumbnail
+            </a>
+          ) : null}
+          <a
+            href={src}
+            download
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-4 text-sm font-medium transition-colors hover:bg-surface-2"
+          >
+            <IconDownload className="h-4 w-4" />
+            Download
+          </a>
+        </div>
       </div>
     </div>
   );

@@ -50,6 +50,13 @@ export const IconDownload = (p: IconProps) => (
   </svg>
 );
 
+export const IconRefresh = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+    <path d="M20 3v4h-4" />
+  </svg>
+);
+
 export const IconFile = (p: IconProps) => (
   <svg {...base(p)}>
     <path d="M14 3H7a1.5 1.5 0 0 0-1.5 1.5v15A1.5 1.5 0 0 0 7 21h10a1.5 1.5 0 0 0 1.5-1.5V8l-4.5-5Z" />

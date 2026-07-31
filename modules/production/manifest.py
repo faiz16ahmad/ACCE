@@ -65,6 +65,14 @@ def build_manifest(
         assets=manifest_assets,
         audio_path=audio.mixed_audio_path if audio else None,
         subtitle_path=subtitle_path,
-        settings=RenderSettings(width=config.width, height=config.height, fps=config.fps, fade=config.fade),
+        settings=RenderSettings(
+            width=config.width,
+            height=config.height,
+            fps=config.fps,
+            fade=config.fade,
+            crf=config.crf,
+            preset=config.preset,
+            faststart=config.faststart,
+        ),
         transitions=transitions,
     )

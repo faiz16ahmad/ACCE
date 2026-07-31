@@ -23,11 +23,13 @@ from core.stages import Stage
 from ..audio.schemas import AudioOutput
 from ..media.schemas import MediaPlan
 from ..scenes.schemas import ScenePlan
+from .ass import build_ass
 from .interface import ProductionModule
 from .manifest import build_manifest
 from .renderer import Renderer, RendererError, build_renderer
 from .schemas import ProductionOutput, RenderLog, SubtitleCue
 from .srt import build_srt
+from .thumbnail import make_thumbnail
 from .timeline import build_timeline
 
 log = logging.getLogger(__name__)
@@ -59,13 +61,16 @@ class DefaultProductionModule(ProductionModule):
         timeline_artifact = self._save(ctx, "timeline.json", timeline)
         written.append(timeline_artifact)
 
-        # 2. Subtitle source: audio's generated file, or a timeline-derived fallback.
+        # 2. Subtitles: the SRT stays the contract artifact; a styled ASS (same
+        #    cues) drives the burn-in for a publishable look.
+        cues = self._subtitle_cues(audio, scenes)
         subtitle_path = audio.subtitle_path
         if subtitle_path is None or not Path(subtitle_path).exists():
-            subtitle_path = self._write_fallback_subtitles(ctx, scenes)
+            subtitle_path = ctx.store.save_text(self.name, "subtitles.srt", build_srt(cues)).path
+        ass_path = ctx.store.save_text(self.name, "subtitles.ass", build_ass(cues)).path
 
         # 3. Render manifest — the renderer's complete input.
-        manifest = build_manifest(timeline, scenes, media, audio, self.config, subtitle_path)
+        manifest = build_manifest(timeline, scenes, media, audio, self.config, ass_path)
         manifest_artifact = self._save(ctx, "render_manifest.json", manifest)
         written.append(manifest_artifact)
 
@@ -76,6 +81,27 @@ class DefaultProductionModule(ProductionModule):
         except RendererError as exc:
             log.error("render failed: %s", exc)
             return StageResult(stage=self.name, ok=False, error=f"render failed: {exc}")
+
+        # 4b. Thumbnail poster: a video frame, or the first downloaded image.
+        fallback_image = next(
+            (
+                asset.local_path
+                for asset in media.assets
+                if asset.asset_type == "image"
+                and asset.local_path
+                and Path(asset.local_path).exists()
+            ),
+            None,
+        )
+        thumbnail_path = make_thumbnail(
+            ctx.store.resolve(self.name, "thumbnail.jpg"),
+            video_path=result.video_path if self.renderer.name == "ffmpeg" else None,
+            duration=timeline.duration,
+            fallback_image=fallback_image,
+            ffmpeg_path=self.config.ffmpeg_path,
+        )
+        if thumbnail_path is not None:
+            written.append(Artifact(stage=self.name.value, name=thumbnail_path.name, path=thumbnail_path))
 
         # 5. Render log + production output.
         render_log = RenderLog(renderer=self.renderer.name, duration=timeline.duration, log=result.log)
@@ -100,14 +126,25 @@ class DefaultProductionModule(ProductionModule):
             duration=timeline.duration,
             title=title,
             description=description,
-            metadata={"renderer": self.renderer.name, "scenes": len(timeline.scenes), "fps": self.config.fps},
+            metadata={
+                "renderer": self.renderer.name,
+                "scenes": len(timeline.scenes),
+                "fps": self.config.fps,
+                "thumbnail": thumbnail_path.name if thumbnail_path is not None else None,
+            },
         )
         meta_artifact = self._save(ctx, "output.json", output)
         written.append(meta_artifact)
         return StageResult(stage=self.name, ok=True, output=output, artifacts_written=written)
 
-    def _write_fallback_subtitles(self, ctx: JobContext, scenes: ScenePlan):
-        """Scene-level SRT when the audio stage produced no subtitle file."""
+    @staticmethod
+    def _subtitle_cues(audio: AudioOutput, scenes: ScenePlan) -> list[SubtitleCue]:
+        """Sentence cues from the audio stage, or scene-level cues as a fallback."""
+        if audio.cues:
+            return [
+                SubtitleCue(index=cue.index, start=cue.start, end=cue.end, text=cue.text)
+                for cue in audio.cues
+            ]
         cues: list[SubtitleCue] = []
         cursor = 0.0
         for scene in scenes.scenes:
@@ -115,5 +152,4 @@ class DefaultProductionModule(ProductionModule):
                 SubtitleCue(index=len(cues) + 1, start=cursor, end=cursor + scene.duration, text=scene.narration)
             )
             cursor += scene.duration
-        artifact = ctx.store.save_text(self.name, "subtitles.srt", build_srt(cues))
-        return artifact.path
+        return cues

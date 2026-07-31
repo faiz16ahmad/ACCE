@@ -207,11 +207,15 @@ def test_command_full_argv(tmp_path):
     assert cmd[0] == "ffmpeg" and cmd[1] == "-y"
     assert str(img) in cmd and str(vid) in cmd and str(audio) in cmd
     joined = " ".join(cmd)
-    assert "concat=n=2:v=1:a=0" in joined
+    # Two scenes + a fade window -> a true xfade chain, not a hard concat.
+    assert "xfade=" in joined
+    assert "concat=n=2:v=1:a=0" not in joined
     assert "subtitles=" in joined
     assert "2:a" in joined  # audio = input index 2
     assert "-t" in cmd and "10.0" in joined
     assert "-c:v" in cmd and "libx264" in cmd
+    assert "-preset" in cmd and "veryfast" in cmd and "-crf" in cmd
+    assert "-movflags" in cmd and "+faststart" in cmd
     assert "-c:a" in cmd and "aac" in cmd
     assert "final_video.mp4" in joined
 

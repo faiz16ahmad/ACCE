@@ -32,6 +32,8 @@ def _license_score(license: str) -> float:
 
 def _resolution_score(hit: MediaHit) -> float:
     if hit.width and hit.height:
+        if hit.width * hit.height < 720 * 576:
+            return 0.2  # SD (< 720p-ish) is penalized hard for publish
         return min(1.0, (hit.width * hit.height) / (1920 * 1080))
     return 0.3
 
@@ -44,9 +46,17 @@ def _orientation_score(hit: MediaHit) -> float:
     return 0.4 if hit.height > hit.width * 1.4 else 0.7
 
 
-def _duration_score(hit: MediaHit, media_type: str) -> float:
+def _duration_score(hit: MediaHit, media_type: str, target_duration: float | None = None) -> float:
     if media_type != "video" or hit.duration is None:
         return 1.0
+    if target_duration and target_duration > 0:
+        duration = hit.duration
+        # Loop-friendly: long enough to cover the scene, not absurdly long.
+        if target_duration <= duration <= max(target_duration * 4, target_duration + 60):
+            return 1.0
+        if 5 <= duration <= 60:
+            return 0.6
+        return 0.3
     return 1.0 if 5 <= hit.duration <= 60 else 0.3
 
 
@@ -60,21 +70,27 @@ def _keyword_score(hit: MediaHit, query: str) -> float:
     return len(tokens & hay) / len(tokens)
 
 
-def rank_hit(hit: MediaHit, query: str, media_type: str) -> float:
+def rank_hit(hit: MediaHit, query: str, media_type: str, target_duration: float | None = None) -> float:
     """Deterministic quality score in [0, 1]."""
     res = _resolution_score(hit)
     orient = _orientation_score(hit)
     lic = _license_score(hit.license)
     kw = _keyword_score(hit, query)
     if media_type == "video":
-        dur = _duration_score(hit, media_type)
+        dur = _duration_score(hit, media_type, target_duration)
         return round(0.30 * res + 0.20 * orient + 0.20 * dur + 0.15 * lic + 0.15 * kw, 3)
     return round(0.35 * res + 0.25 * orient + 0.20 * lic + 0.20 * kw, 3)
 
 
-def rank_hits(hits: list[MediaHit], query: str, media_type: str) -> list[MediaHit]:
+def rank_hits(
+    hits: list[MediaHit], query: str, media_type: str, target_duration: float | None = None
+) -> list[MediaHit]:
     """Return `hits` ordered best-first (stable for ties)."""
-    return sorted(hits, key=lambda hit: rank_hit(hit, query, media_type), reverse=True)
+    return sorted(
+        hits,
+        key=lambda hit: rank_hit(hit, query, media_type, target_duration),
+        reverse=True,
+    )
 
 
 def is_satisfactory(score: float, threshold: float = 0.6) -> bool:

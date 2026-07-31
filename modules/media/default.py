@@ -85,6 +85,7 @@ class DefaultMediaModule(MediaModule):
             media_type=asset_type,
             count=self.config.candidates,
             threshold=self.config.satisfactory_score,
+            target_duration=scene.duration,
         )
         if not candidates and asset_type == "video":
             # Video-first scenes fall back to still images when nothing fits.
@@ -113,14 +114,21 @@ class DefaultMediaModule(MediaModule):
         selected = candidates[0]
         local_path: Path | None = None
         if self.config.download:
-            try:
-                dest = ctx.store.resolve(self.name, f"scene_{index:02d}{_file_extension(selected.url)}")
-                cache_root = self.cache.root if self.cache is not None else ctx.store.root
-                local_path = download_asset(
-                    selected.url, dest, cache_root, timeout=self.config.download_timeout
-                )
-            except ProviderError as exc:
-                log.warning("download failed for scene %d: %s", index, exc)
+            # Try ranked candidates in order; only give up (placeholder) when
+            # every candidate fails to download.
+            for candidate in candidates:
+                try:
+                    dest = ctx.store.resolve(self.name, f"scene_{index:02d}{_file_extension(candidate.url)}")
+                    cache_root = self.cache.root if self.cache is not None else ctx.store.root
+                    local_path = download_asset(
+                        candidate.url, dest, cache_root, timeout=self.config.download_timeout
+                    )
+                    selected = candidate
+                    break
+                except ProviderError as exc:
+                    log.warning(
+                        "download failed for scene %d (%s): %s", index, candidate.provider, exc
+                    )
 
         return MediaAssetPlan(
             scene_number=index,

@@ -35,6 +35,10 @@ class RenderSettings(BaseModel):
     codec: str = "libx264"
     audio_codec: str = "aac"
     fade: float = 0.5  # V1 transition fade duration (seconds)
+    # x264 encoding tuning (milestone 10). Additive — old manifests parse fine.
+    crf: int = 18
+    preset: str = "veryfast"
+    faststart: bool = True
 
 
 class ManifestAsset(BaseModel):

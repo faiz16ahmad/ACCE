@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { useJob } from "@/hooks/useJob";
 import { useArtifacts } from "@/hooks/useArtifacts";
+import { api } from "@/lib/api";
 import { Tabs, type TabItem } from "@/components/ui/Tabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Spinner } from "@/components/ui/Spinner";
@@ -16,7 +18,7 @@ import { VideoPreview } from "@/components/preview/VideoPreview";
 import { ArtifactExplorer } from "@/components/artifacts/ArtifactExplorer";
 import { QualityPanel } from "@/components/quality/QualityPanel";
 import { formatClock } from "@/lib/format";
-import { IconFilm, IconTerminal, IconAlert } from "@/components/ui/icons";
+import { IconFilm, IconTerminal, IconAlert, IconRefresh } from "@/components/ui/icons";
 
 type TabKey = "progress" | "preview" | "artifacts" | "quality" | "logs";
 
@@ -31,9 +33,26 @@ function PendingPanel({ label }: { label: string }) {
 }
 
 export function RunWorkspace({ jobId }: { jobId: string }) {
+  const router = useRouter();
   const { job, error, loading, terminal } = useJob(jobId);
   const { artifacts, refresh: refreshArtifacts } = useArtifacts(jobId, terminal);
   const [tab, setTab] = useState<TabKey>("progress");
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenerateError, setRegenerateError] = useState<string | null>(null);
+
+  async function onRegenerate() {
+    const input = job?.result?.input;
+    if (!input) return;
+    setRegenerating(true);
+    setRegenerateError(null);
+    try {
+      const { job_id } = await api.createJob(input);
+      router.push(`/runs/${job_id}`);
+    } catch (err) {
+      setRegenerateError(err instanceof Error ? err.message : String(err));
+      setRegenerating(false);
+    }
+  }
 
   const status = job?.status ?? "pending";
   const succeeded = status === "succeeded";
@@ -107,11 +126,26 @@ export function RunWorkspace({ jobId }: { jobId: string }) {
             {result?.finished_at ? ` · finished ${formatClock(result.finished_at)}` : ""}
           </p>
         </div>
-        {failed && job.error ? (
-          <span className="flex items-center gap-1.5 text-xs text-danger">
-            <IconAlert className="h-4 w-4" /> {job.error}
-          </span>
-        ) : null}
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          {failed && job.error ? (
+            <span className="flex items-center gap-1.5 text-xs text-danger">
+              <IconAlert className="h-4 w-4" /> {job.error}
+            </span>
+          ) : null}
+          {regenerateError ? (
+            <span className="text-xs text-danger">{regenerateError}</span>
+          ) : null}
+          {(succeeded || failed) && result?.input ? (
+            <Button variant="outline" onClick={onRegenerate} disabled={regenerating}>
+              {regenerating ? (
+                <Spinner className="h-4 w-4 text-muted" />
+              ) : (
+                <IconRefresh className="h-4 w-4" />
+              )}
+              Regenerate
+            </Button>
+          ) : null}
+        </div>
       </header>
 
       {failed ? (

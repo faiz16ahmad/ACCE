@@ -54,6 +54,8 @@ export interface JobSummary {
   created_at: number;
   topic: string;
   score?: number | null;
+  /** Poster frame URL (e.g. `/artifacts/.../production/thumbnail.jpg`), when present. */
+  thumbnail?: string | null;
 }
 
 /** One entry in `GET /api/jobs/{id}/artifacts`. */

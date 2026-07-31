@@ -15,6 +15,7 @@ from core.stages import Stage
 from modules.scenes.default import DefaultScenesModule, build_visuals_prompt, extract_json
 from modules.scenes.schemas import Scene, ScenePlan
 from modules.scenes.template import keywords_for, plan_scenes, transition_for, visual_type_for
+from modules.script.schemas import NarrationBlock, ScriptOutput
 from providers.base import LLMProvider
 from providers.stubs.llm import StubLLMProvider
 
@@ -161,6 +162,43 @@ def test_transition_rules():
     assert transition_for(1, False) == "dissolve"
     assert transition_for(2, False) == "fade"
     assert transition_for(0, True) == "fade_to_black"
+
+
+# -- milestone 10: pacing rhythm + visual variety -----------------------------
+
+
+def test_template_pacing_rhythm():
+    blocks = [NarrationBlock(paragraph="word " * 10) for _ in range(5)]
+    plan = plan_scenes(ScriptOutput(hook="h", body=["b"], ending="e", narration=blocks), 60, "topic")
+    durations = [scene.estimated_duration for scene in plan.scenes]
+    assert abs(sum(durations) - 60) < 1.5
+    # Equal word counts -> the rhythm multipliers make hook and ending shorter
+    # than the body scenes.
+    assert durations[0] < durations[1]
+    assert durations[-1] < durations[1]
+
+
+def test_template_visual_variety_includes_still_and_motion():
+    paragraphs = [
+        "plain words here alpha",
+        "plain words here beta",
+        "plain words here gamma",
+        "plain words here delta",
+        "plain words here epsilon",
+        "plain words here zeta",
+    ]
+    plan = plan_scenes(
+        ScriptOutput(
+            hook="h", body=["b"], ending="e", narration=[NarrationBlock(paragraph=p) for p in paragraphs]
+        ),
+        60,
+        "topic",
+        style="explainer",
+    )
+    types = [scene.visual_type for scene in plan.scenes]
+    assert "stock_image" in types
+    assert "stock_video" in types
+    assert plan.scenes[-1].visual_type == "text_overlay"
 
 
 def test_keywords_for_concrete_and_topic_first():

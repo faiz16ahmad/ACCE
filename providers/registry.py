@@ -7,7 +7,11 @@ raise a clear error pointing at the milestone that owns them.
 
 from __future__ import annotations
 
-from .base import LLMProvider, MusicProvider, Provider, TTSProvider
+import logging
+from pathlib import Path
+
+from .base import LLMProvider, MusicProvider, Provider, ProviderError, TTSProvider
+from .edge_tts import EdgeTTSProvider
 from .gemini import GeminiProvider
 from .local_music import LocalMusicProvider
 from .pexels import PexelsImageProvider, PexelsVideoProvider
@@ -18,6 +22,8 @@ from .stubs.music import StubMusicProvider
 from .stubs.tts import StubTTSProvider
 from .stubs.video import StubVideoProvider
 from .wikimedia import WikimediaImageProvider, WikimediaVideoProvider
+
+log = logging.getLogger(__name__)
 
 _LLMS: dict[str, type[LLMProvider]] = {"stub": StubLLMProvider, "gemini": GeminiProvider}
 _IMAGES = {
@@ -37,7 +43,30 @@ _MUSIC: dict[str, type[MusicProvider]] = {
     "pixabay": PixabayMusicProvider,
     "local": LocalMusicProvider,
 }
-_TTS: dict[str, type[TTSProvider]] = {"stub": StubTTSProvider}
+_TTS: dict[str, type[TTSProvider]] = {"stub": StubTTSProvider, "edge": EdgeTTSProvider}
+
+
+class FallbackTTSProvider(TTSProvider):
+    """Edge TTS with automatic stub narration fallback.
+
+    Represents the `edge` experience (`name="edge"`): real audio when Edge
+    works, StubTTS markers when the extra is missing or a call fails. Callers
+    never branch on provider, so a degraded run still completes like the
+    key-free stub demo.
+    """
+
+    name = "edge"
+
+    def __init__(self, primary: TTSProvider, fallback: TTSProvider) -> None:
+        self.primary = primary
+        self.fallback = fallback
+
+    def synthesize(self, text: str, *, voice: str | None = None, out_path: Path) -> Path:
+        try:
+            return self.primary.synthesize(text, voice=voice, out_path=out_path)
+        except ProviderError as exc:
+            log.warning("edge-tts unavailable (%s); falling back to stub narration", exc)
+            return self.fallback.synthesize(text, voice=voice, out_path=out_path)
 
 _TABLES = {
     "llm": _LLMS,
@@ -71,6 +100,10 @@ def get_provider(kind: str, name: str, **config: object) -> Provider:
     table = _TABLES.get(kind)
     if table is None:
         raise ValueError(f"unknown provider kind: {kind!r}")
-    if name in table:
-        return table[name](**config)
-    raise ProviderNotImplementedError(kind, name, _UNIMPLEMENTED.get(name, "not yet implemented"))
+    if name not in table:
+        raise ProviderNotImplementedError(kind, name, _UNIMPLEMENTED.get(name, "not yet implemented"))
+    # Edge TTS: optional extra — any failure degrades to StubTTS automatically.
+    if kind == "tts" and name == "edge":
+        voice = config.pop("voice", None)
+        return FallbackTTSProvider(EdgeTTSProvider(voice=voice), StubTTSProvider())
+    return table[name](**config)

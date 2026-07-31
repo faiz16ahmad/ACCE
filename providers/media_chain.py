@@ -40,7 +40,15 @@ class MediaChain:
                 return hits
         return []
 
-    def best(self, query: str, *, media_type: str = "image", count: int = 10, threshold: float = 0.6) -> list[MediaHit]:
+    def best(
+        self,
+        query: str,
+        *,
+        media_type: str = "image",
+        count: int = 10,
+        threshold: float = 0.6,
+        target_duration: float | None = None,
+    ) -> list[MediaHit]:
         """Full ranked candidate list from the first provider with a satisfactory top hit."""
         chain = self._images if media_type == "image" else self._videos
         for provider in chain:
@@ -51,8 +59,8 @@ class MediaChain:
                 continue
             if not hits:
                 continue
-            ranked = rank_hits(hits, query, media_type)
-            if is_satisfactory(rank_hit(ranked[0], query, media_type), threshold):
+            ranked = rank_hits(hits, query, media_type, target_duration)
+            if is_satisfactory(rank_hit(ranked[0], query, media_type, target_duration), threshold):
                 return ranked
         return []
 

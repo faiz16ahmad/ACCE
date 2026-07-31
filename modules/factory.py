@@ -46,7 +46,9 @@ def build_orchestrator(
         cache,
         api_keys={"pexels": settings.media.pexels_api_key, "pixabay": settings.media.pixabay_api_key},
     )
-    engine = build_audio_engine(settings.audio.engine, settings.production.ffmpeg_path)
+    engine = build_audio_engine(
+        settings.audio.engine, settings.production.ffmpeg_path, duck=settings.audio.music_duck
+    )
     music = build_music_chain(
         settings.music.providers,
         api_keys={"pixabay": settings.music.pixabay_api_key},

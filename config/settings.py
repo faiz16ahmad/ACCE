@@ -44,12 +44,14 @@ class MusicConfig(BaseModel):
 
 
 class TTSConfig(BaseModel):
-    provider: str = "stub"
-    voice: str = "en-US-Wavenet-D"
+    provider: str = "stub"  # "stub" | "edge"
+    # Edge TTS default voice (Microsoft neural); stub ignores the name.
+    voice: str = "en-US-AriaNeural"
 
 
 class AudioConfig(BaseModel):
     engine: str = "stub"  # "stub" | "ffmpeg"
+    music_duck: bool = True  # duck the music bed under narration (ffmpeg mix)
     music_style: str = "ambient background music"
     music_volume: float = 0.2
     narration_volume: float = 1.0
@@ -77,6 +79,10 @@ class ProductionConfig(BaseModel):
     fps: int = 30
     ffmpeg_path: str | None = None
     fade: float = 0.5  # V1 transition fade duration (seconds)
+    # x264 encoding quality / speed (milestone 10 publish-ready tuning).
+    crf: int = 18  # lower = better quality; 18 is visually lossless for web
+    preset: str = "veryfast"  # speed/compression tradeoff
+    faststart: bool = True  # -movflags +faststart for instant web playback
 
 
 class ScriptConfig(BaseModel):

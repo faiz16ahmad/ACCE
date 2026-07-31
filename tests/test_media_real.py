@@ -14,9 +14,12 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 
 from config.settings import MediaConfig
+from core.models import JobContext, UserInput
 from core.stages import Stage
 from memory.cache import DiskCache
+from memory.store import ArtifactStore
 from modules.media.default import DefaultMediaModule, refine_query
+from modules.scenes.schemas import Scene
 from providers.base import ProviderError
 from providers.download import download_asset
 from providers.media_chain import MediaChain
@@ -222,3 +225,48 @@ def test_download_asset_skips_placeholder_url(tmp_path):
     dest = tmp_path / "a.jpg"
     assert download_asset("https://placeholder.example/x.jpg", dest, tmp_path / ".cache") is None
     assert not dest.exists()
+
+
+# -- milestone 10: duration-matched ranking + download fallback ---------------
+
+
+def test_rank_prefers_video_covering_scene_duration():
+    short = _hit("p", "q", media_type="video", duration=3.0, width=1920, height=1080)
+    good = _hit("p", "q", media_type="video", duration=8.0, width=1920, height=1080)
+    scene_duration = 6.0
+    assert (
+        rank_hit(good, "q", "video", target_duration=scene_duration)
+        > rank_hit(short, "q", "video", target_duration=scene_duration)
+    )
+
+
+def test_rank_penalizes_sd_resolution():
+    hd = _hit("p", "q", width=1920, height=1080)
+    sd = _hit("p", "q", width=640, height=360)
+    assert rank_hit(hd, "q", "image") > rank_hit(sd, "q", "image")
+
+
+def test_retrieve_download_falls_back_to_next_candidate(tmp_path, monkeypatch):
+    cache = DiskCache(tmp_path / "cache")
+    hits = [
+        _hit("p", "q", url="https://cdn.example/bad.jpg"),
+        _hit("p", "q", url="https://cdn.example/good.jpg"),
+    ]
+    chain = make_chain(cache, [RecordingProvider("p", hits=hits)])
+    module = DefaultMediaModule(chain, cache=cache, config=MediaConfig(candidates=2))
+    scene = Scene(scene=1, narration="n", duration=5.0, visual_type="stock_image", search_keywords=["q"])
+    ctx = JobContext(
+        job_id="job-x", input=UserInput(topic="t"), store=ArtifactStore(tmp_path / "out" / "job-x")
+    )
+
+    def fake_download(url, dest, cache_root, timeout=15.0):
+        if "bad" in url:
+            raise ProviderError("boom")
+        dest.write_bytes(b"ok")
+        return dest
+
+    monkeypatch.setattr("modules.media.default.download_asset", fake_download)
+    asset = module._retrieve(ctx, scene, 1)
+
+    assert asset.asset_url == "https://cdn.example/good.jpg"
+    assert asset.local_path is not None and asset.local_path.exists()

@@ -46,7 +46,7 @@ class DefaultAudioModule(AudioModule):
         engine: AudioEngine,
         cache: DiskCache | None = None,
         config: AudioConfig | None = None,
-        voice: str = "en-US-Wavenet-D",
+        voice: str = "en-US-AriaNeural",
     ) -> None:
         self.tts = tts
         self.music = music
@@ -76,7 +76,8 @@ class DefaultAudioModule(AudioModule):
         mix_plan = self._build_mix_plan(narration_tracks, music_track)
 
         # 4. Audio mixing
-        mixed = ctx.store.resolve(self.name, "master_audio.txt")
+        suffix = ".m4a" if getattr(self.engine, "name", "stub") == "ffmpeg" else ".txt"
+        mixed = ctx.store.resolve(self.name, f"master_audio{suffix}")
         self.engine.mix(mix_plan, mixed)
         written.append(Artifact(stage=self.name.value, name=mixed.name, path=mixed))
 
@@ -124,7 +125,8 @@ class DefaultAudioModule(AudioModule):
         tracks: list[AudioTrack] = []
         written: list[Artifact] = []
         for scene in plan.scenes:
-            out = ctx.store.resolve(self.name, f"narration_scene_{scene.scene:02d}.txt")
+            suffix = ".mp3" if getattr(self.tts, "name", "stub") == "edge" else ".txt"
+            out = ctx.store.resolve(self.name, f"narration_scene_{scene.scene:02d}{suffix}")
             self.tts.synthesize(scene.narration, voice=self.voice, out_path=out)
             tracks.append(
                 AudioTrack(

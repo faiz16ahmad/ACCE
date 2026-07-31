@@ -64,6 +64,12 @@ def visual_type_for(segment: str, index: int, is_last: bool, style: str) -> str:
         return "infographic"
     if _MAP_RE.search(segment):
         return "map"
+    # Deliberate variety for generic scenes (milestone 10): mostly motion
+    # video, with stills and the occasional animation for visual rhythm.
+    if index % 4 == 3:
+        return "stock_image"
+    if index % 4 == 2 and style in ("storytelling", "documentary"):
+        return "animation"
     return "stock_video"
 
 
@@ -98,7 +104,14 @@ def plan_scenes(
 
     words = [count_words(block.paragraph) for block in scenes]
     total_words = sum(words) or 1
-    durations = [round(total_target * w / total_words, 1) for w in words]
+    durations = [total_target * w / total_words for w in words]
+    # Pacing rhythm (milestone 10): punchy hook and ending, fuller body —
+    # then renormalize so the total still hits the target.
+    count = len(durations)
+    multipliers = [0.9 if i == 0 else (0.85 if i == count - 1 else 1.05) for i in range(count)]
+    weighted = [d * m for d, m in zip(durations, multipliers, strict=True)]
+    scale = total_target / (sum(weighted) or 1.0)
+    durations = [round(w * scale, 1) for w in weighted]
     durations[-1] = round(total_target - sum(durations[:-1]), 1)  # last absorbs rounding
 
     plan: list[Scene] = []

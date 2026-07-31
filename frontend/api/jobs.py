@@ -84,7 +84,13 @@ class JobStore:
 
     def list_summaries(self) -> list[dict]:
         with self._lock:
-            return [record.summary() for record in self._jobs.values()]
+            entries = [record.summary() for record in self._jobs.values()]
+        output_root = self._settings.paths.output_dir
+        for entry in entries:
+            thumb = thumbnail_url(output_root, entry["job_id"])
+            if thumb is not None:
+                entry["thumbnail"] = thumb
+        return entries
 
     def _run(self, job_id: str) -> None:
         record = self._jobs[job_id]
@@ -121,6 +127,13 @@ def read_job_meta(output_dir: Path, job_id: str) -> dict | None:
         return None
 
 
+def thumbnail_url(output_dir: Path, job_id: str) -> str | None:
+    """Artifact URL of a job's poster frame, when the Production stage made one."""
+    if (Path(output_dir) / job_id / "production" / "thumbnail.jpg").is_file():
+        return f"/artifacts/{job_id}/production/thumbnail.jpg"
+    return None
+
+
 def scan_job_dirs(output_dir: Path) -> list[dict]:
     """Job summaries from disk so the dashboard shows history across restarts."""
     root = Path(output_dir)
@@ -131,15 +144,17 @@ def scan_job_dirs(output_dir: Path) -> list[dict]:
         if not (path.is_dir() and path.name.startswith("job-")):
             continue
         meta = read_job_meta(root, path.name)
-        entries.append(
-            {
-                "job_id": path.name,
-                "status": (meta or {}).get("status", "succeeded"),
-                "created_at": path.stat().st_mtime,
-                "topic": ((meta or {}).get("input") or {}).get("topic", path.name),
-                "score": _quality_score(meta),
-            }
-        )
+        entry = {
+            "job_id": path.name,
+            "status": (meta or {}).get("status", "succeeded"),
+            "created_at": path.stat().st_mtime,
+            "topic": ((meta or {}).get("input") or {}).get("topic", path.name),
+            "score": _quality_score(meta),
+        }
+        thumb = thumbnail_url(root, path.name)
+        if thumb is not None:
+            entry["thumbnail"] = thumb
+        entries.append(entry)
     return entries
 
 

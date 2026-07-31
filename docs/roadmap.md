@@ -13,7 +13,7 @@ Status legend: ✅ done · 🔜 in progress · ⏳ not started
 | 7 | Production | ffmpeg rendering (timeline assembly) + thumbnail | ✅ |
 | 8 | Quality | Deterministic validation, severity, scoring, retry recommendation | ✅ |
 | 9 | UI | Next.js + Tailwind dashboard (projects, generate, live progress, artifacts, preview, quality, logs, settings) | ✅ |
-| 10 | End-to-end | Publishable MP4 from a topic with minimal manual work | ⏳ |
+| 10 | End-to-end | Real audio (mixing + Edge TTS), real transitions, ASS styling, thumbnails, UI polish | ✅ |
 
 ## Milestone 1 — done (this deliverable)
 
@@ -181,7 +181,37 @@ Status legend: ✅ done · 🔜 in progress · ⏳ not started
 - State: React Context (theme + API base) + polling hooks; no state library.
 - 9 unit tests (`vitest`) + `next build` type-check + ESLint clean.
 
-## Milestone 10 — end-to-end
+## Milestone 10 — end-to-end (done)
 
-- One command from topic → publishable MP4 with minimal manual work.
-- E2E test that exercises every stage against real providers.
+- **B1 Real audio mixing** — `FfmpegAudioEngine.mix` builds the ffmpeg graph
+  from the `AudioMixPlan`: every segment delayed to its timeline position,
+  volume/faded, `amix(normalize=0)`, loudness-normalized to the streaming
+  target (-16 LUFS). No narration → 1s silent master (stub-compatible).
+- **B2 EdgeTTS** — `EdgeTTSProvider` (real neural narration, **no API key**)
+  behind the TTS interface; `registry.get_provider("tts", "edge")` wraps it in
+  `FallbackTTSProvider`. If `edge-tts` isn't installed (`pip install
+  acce[tts]`) or a voice is unknown (auto-retried with the default), it
+  degrades to the stub marker so the pipeline always completes. Narration files
+  become `.mp3` when edge is active.
+- **B3 Thumbnails** — `make_thumbnail` extracts a 1280px frame near the 40%
+  mark of a real render, or copies the first downloaded image as a poster;
+  surfaced as `thumbnail.jpg` + `production.output.metadata.thumbnail`.
+- **B4 Encode quality** — ffmpeg render now passes `-preset`/`-crf` and
+  `+faststart` from `RenderSettings`.
+- **Q1 True crossfades** — scene transitions are real `xfade` (fade/dissolve/
+  cut/fade-to-black), not per-scene fades; clips are extended by the fade
+  window so total duration (and audio sync) is unchanged. Graceful fallback to
+  the V1 fade approximation for single scenes / sub-fade durations.
+- **Q2 ASS subtitles** — styled `subtitles.ass` (large font, outline+shadow,
+  bottom margin) burns into the render; the SRT stays the contract artifact.
+- **Q3 Media fallback + ranking** — a failed download tries the next-ranked
+  candidate before emitting a placeholder; video ranking prefers clips that
+  cover the scene duration; SD (<720p) is penalized.
+- **Q4 Scene pacing variety** — template scenes get hook/ending-shortening
+  rhythm and a deliberate video/image/animation mix.
+- **R1 Audio ducking** — music bed is sidechain-compressed under the narration
+  in the mix graph (config: `ACCE_AUDIO__MUSIC_DUCK`).
+- **Tier3 UI** — home cards show poster frames, the preview plays with a
+  poster + thumbnail download, and runs can be regenerated with one click.
+- One command from topic → publishable MP4 with minimal manual work; verified
+  key-free end-to-end (stub providers; real providers need API keys + ffmpeg).
