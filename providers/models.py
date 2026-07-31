@@ -21,6 +21,8 @@ class MediaHit(BaseModel):
     attribution: str | None = None
     width: int | None = None
     height: int | None = None
+    duration: float | None = None  # video duration (seconds), when known
+    title: str | None = None  # short descriptive title / alt text
 
 
 class MusicHit(BaseModel):

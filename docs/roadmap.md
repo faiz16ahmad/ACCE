@@ -8,7 +8,7 @@ Status legend: ✅ done · 🔜 in progress · ⏳ not started
 | 2 | Research module | Real LLM research (Gemini provider) + live-fetch fact verification | ✅ |
 | 3 | Script module | Real LLM scriptwriting (hook/body/ending/narration) + quality metrics | ✅ |
 | 4 | Scene planner | Pacing + visual/keyword choices per scene | ✅ |
-| 5 | Media search | Pexels/Pixabay/Wikimedia providers + asset downloads + license handling | ⏳ |
+| 5 | Media search | Pexels/Pixabay/Wikimedia providers + asset downloads + license handling | ✅ |
 | 6 | Production | TTS (real), music (Pixabay Music), ffmpeg mixing & rendering, thumbnail | ⏳ |
 | 7 | Quality | Hard failures + optional re-render of failing stages | ⏳ |
 | 8 | UI | Next.js + Tailwind dashboard (stage, logs, progress, preview, download) | ⏳ |
@@ -69,12 +69,25 @@ Status legend: ✅ done · 🔜 in progress · ⏳ not started
   aliases so media/audio/quality need no changes.
 - **Definition of done:** scenes map 1:1 onto narration beats.
 
-## Milestone 5 — media
+## Milestone 5 — media (done)
 
-- `PexelsProvider`, `PixabayProvider`, `WikimediaProvider` (registered per
-  the chain in `providers/media_chain.py`).
-- Actual asset download into `out/<job_id>/media/`; record license + attribution.
-- **Definition of done:** every scene has a locally-downloaded, license-clean asset.
+- Provider abstraction as designed: independent `ImageProvider` /
+  `VideoProvider` implementations (Pexels, Pixabay, Wikimedia) registered in
+  `providers/registry.py`; the module never branches on which provider is used.
+- Chain priority **Cache → Pexels → Pixabay → Wikimedia** in
+  `MediaChain.best()`: rank each provider's candidates, stop at the first
+  satisfactory top hit, return the **full ranked candidate list** (selection is
+  `candidates[0]`). A failing provider never breaks the chain.
+- Deterministic V1 ranking (`providers/ranking.py`): resolution, orientation,
+  video duration, license, keyword match — no AI.
+- Downloads (`providers/download.py`) are a separate post-selection step,
+  auto-cached by URL, and never influence ranking. No suitable asset → a
+  structured placeholder, pipeline still passes.
+- New artifact `media_plan.json`: per scene `scene_number`, stable `asset_id`
+  (`asset_0001`…), `selected_provider`, `asset_type`, `asset_url`, `local_path`,
+  `attribution`, `license`, `search_query`, and `candidates`.
+- **Definition of done:** every scene has a selected, license-attributed asset
+  (locally downloaded when a real provider/key is configured).
 
 ## Milestone 6 — production (incl. audio)
 

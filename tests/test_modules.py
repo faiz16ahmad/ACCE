@@ -13,7 +13,7 @@ from modules.audio.default import DefaultAudioModule
 from modules.audio.engine import StubAudioEngine
 from modules.audio.schemas import AudioOutput
 from modules.media.default import DefaultMediaModule
-from modules.media.schemas import MediaOutput
+from modules.media.schemas import MediaPlan
 from modules.production.default import DefaultProductionModule
 from modules.production.schemas import ProductionOutput
 from modules.quality.default import DefaultQualityModule
@@ -65,10 +65,11 @@ def test_media_module(make_ctx, scenes, tmp_path):
     ctx = make_ctx(**{Stage.SCENES: scenes})
     cache = DiskCache(tmp_path / "cache")
     module = DefaultMediaModule(build_media_chain(["stub"], cache), cache)
-    result = _exercise(module, ctx, MediaOutput)
+    result = _exercise(module, ctx, MediaPlan)
     assert result.output.assets
     assert all(a.scene_index >= 1 for a in result.output.assets)
-    assert ctx.store.exists(Stage.MEDIA, "media.json")
+    assert all(a.asset_id.startswith("asset_") for a in result.output.assets)
+    assert ctx.store.exists(Stage.MEDIA, "media_plan.json")
 
 
 def test_audio_module(make_ctx, scenes, tmp_path):

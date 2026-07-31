@@ -35,7 +35,7 @@ def test_end_to_end_stub_pipeline(tmp_path):
         (Stage.RESEARCH, "research.json"),
         (Stage.SCRIPT, "script.json"),
         (Stage.SCENES, "scene_plan.json"),
-        (Stage.MEDIA, "media.json"),
+        (Stage.MEDIA, "media_plan.json"),
         (Stage.AUDIO, "audio.json"),
         (Stage.PRODUCTION, "subtitles.srt"),
         (Stage.QUALITY, "report.json"),
@@ -106,7 +106,7 @@ def test_registry_rejects_unimplemented_providers():
     with pytest.raises(ProviderNotImplementedError):
         get_provider("llm", "openai")
     with pytest.raises(ProviderNotImplementedError):
-        get_provider("image", "pexels")
+        get_provider("llm", "anthropic")
 
 
 def test_unknown_provider_kind_raises():

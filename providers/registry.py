@@ -9,15 +9,28 @@ from __future__ import annotations
 
 from .base import LLMProvider, MusicProvider, Provider, TTSProvider
 from .gemini import GeminiProvider
+from .pexels import PexelsImageProvider, PexelsVideoProvider
+from .pixabay import PixabayImageProvider, PixabayVideoProvider
 from .stubs.image import StubImageProvider
 from .stubs.llm import StubLLMProvider
 from .stubs.music import StubMusicProvider
 from .stubs.tts import StubTTSProvider
 from .stubs.video import StubVideoProvider
+from .wikimedia import WikimediaImageProvider, WikimediaVideoProvider
 
 _LLMS: dict[str, type[LLMProvider]] = {"stub": StubLLMProvider, "gemini": GeminiProvider}
-_IMAGES = {"stub": StubImageProvider}
-_VIDEOS = {"stub": StubVideoProvider}
+_IMAGES = {
+    "stub": StubImageProvider,
+    "pexels": PexelsImageProvider,
+    "pixabay": PixabayImageProvider,
+    "wikimedia": WikimediaImageProvider,
+}
+_VIDEOS = {
+    "stub": StubVideoProvider,
+    "pexels": PexelsVideoProvider,
+    "pixabay": PixabayVideoProvider,
+    "wikimedia": WikimediaVideoProvider,
+}
 _MUSIC: dict[str, type[MusicProvider]] = {"stub": StubMusicProvider}
 _TTS: dict[str, type[TTSProvider]] = {"stub": StubTTSProvider}
 
@@ -38,9 +51,6 @@ _UNIMPLEMENTED = {
     "glm": "implement providers/glm.py and register it",
     "deepseek": "implement providers/deepseek.py and register it",
     "openrouter": "implement providers/openrouter.py and register it",
-    "pexels": "milestone 5 (media)",
-    "pixabay": "milestone 5 (media/music)",
-    "wikimedia": "milestone 5 (media)",
 }
 
 

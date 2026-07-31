@@ -75,12 +75,20 @@ def scenes():
 
 @pytest.fixture
 def media():
-    from modules.media.schemas import MediaOutput, MediaResult
+    from modules.media.schemas import MediaAssetPlan, MediaPlan
     from providers.models import MediaHit
 
-    return MediaOutput(
+    return MediaPlan(
         assets=[
-            MediaResult(scene_index=1, asset=MediaHit(provider="stub", media_type="video", url="https://u"))
+            MediaAssetPlan(
+                scene_number=1,
+                asset_id="asset_0001",
+                selected_provider="stub",
+                asset_type="video",
+                asset_url="https://u",
+                license="stub",
+                candidates=[MediaHit(provider="stub", media_type="video", url="https://u")],
+            )
         ]
     )
 

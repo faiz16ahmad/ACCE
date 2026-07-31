@@ -40,14 +40,18 @@ def build_orchestrator(
         max_output_tokens=settings.llm.max_output_tokens,
         base_url=settings.llm.base_url,
     )
-    media = build_media_chain(settings.media.providers, cache)
+    media = build_media_chain(
+        settings.media.providers,
+        cache,
+        api_keys={"pexels": settings.media.pexels_api_key, "pixabay": settings.media.pixabay_api_key},
+    )
     engine = build_audio_engine(settings.audio.engine, settings.production.ffmpeg_path)
 
     modules = {
         Stage.RESEARCH: DefaultResearchModule(llm, cache, config=settings.research),
         Stage.SCRIPT: DefaultScriptModule(llm, config=settings.script),
         Stage.SCENES: DefaultScenesModule(llm),
-        Stage.MEDIA: DefaultMediaModule(media, cache),
+        Stage.MEDIA: DefaultMediaModule(media, cache, config=settings.media),
         Stage.AUDIO: DefaultAudioModule(
             tts=get_provider("tts", settings.tts.provider),
             music=get_provider("music", settings.music.provider),

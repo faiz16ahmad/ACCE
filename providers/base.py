@@ -15,6 +15,10 @@ class Provider(ABC):  # noqa: B024 - marker base; families add their own abstrac
     name: str = "abstract"
 
 
+class ProviderError(RuntimeError):
+    """Provider-level failure (network, auth, malformed response)."""
+
+
 class LLMProvider(Provider):
     @abstractmethod
     def complete(self, prompt: str, *, system: str | None = None, **kwargs: object) -> str:

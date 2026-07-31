@@ -25,9 +25,15 @@ class LLMConfig(BaseModel):
 
 
 class MediaConfig(BaseModel):
-    # Ordered fallback chain (cache is always priority 1). Only "stub" is
-    # available in V1; e.g. ["pexels", "pixabay", "wikimedia"] later.
+    # Ordered fallback chain (cache is always priority 1). "stub" is the
+    # key-free default; e.g. ["pexels", "pixabay", "wikimedia"] for real runs.
     providers: list[str] = Field(default_factory=lambda: ["stub"])
+    pexels_api_key: str = ""  # or set PEXELS_API_KEY
+    pixabay_api_key: str = ""  # or set PIXABAY_API_KEY
+    candidates: int = 10  # candidates fetched per provider before ranking
+    satisfactory_score: float = 0.6  # minimum rank to stop the chain
+    download: bool = True
+    download_timeout: float = 15.0
 
 
 class MusicConfig(BaseModel):
