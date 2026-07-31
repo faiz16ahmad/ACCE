@@ -9,8 +9,9 @@ from __future__ import annotations
 
 from .base import LLMProvider, MusicProvider, Provider, TTSProvider
 from .gemini import GeminiProvider
+from .local_music import LocalMusicProvider
 from .pexels import PexelsImageProvider, PexelsVideoProvider
-from .pixabay import PixabayImageProvider, PixabayVideoProvider
+from .pixabay import PixabayImageProvider, PixabayMusicProvider, PixabayVideoProvider
 from .stubs.image import StubImageProvider
 from .stubs.llm import StubLLMProvider
 from .stubs.music import StubMusicProvider
@@ -31,7 +32,11 @@ _VIDEOS = {
     "pixabay": PixabayVideoProvider,
     "wikimedia": WikimediaVideoProvider,
 }
-_MUSIC: dict[str, type[MusicProvider]] = {"stub": StubMusicProvider}
+_MUSIC: dict[str, type[MusicProvider]] = {
+    "stub": StubMusicProvider,
+    "pixabay": PixabayMusicProvider,
+    "local": LocalMusicProvider,
+}
 _TTS: dict[str, type[TTSProvider]] = {"stub": StubTTSProvider}
 
 _TABLES = {

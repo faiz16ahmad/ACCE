@@ -6,8 +6,8 @@ import os
 from urllib.parse import urlencode
 
 from ._http import get_json
-from .base import ImageProvider, ProviderError, VideoProvider
-from .models import MediaHit
+from .base import ImageProvider, MusicProvider, ProviderError, VideoProvider
+from .models import MediaHit, MusicHit
 
 _BASE = "https://pixabay.com/api"
 
@@ -69,6 +69,30 @@ class PixabayVideoProvider(_PixabayBase, VideoProvider):
                     height=medium.get("height"),
                     duration=item.get("duration"),
                     title=item.get("tags"),
+                )
+            )
+        return hits
+
+
+class PixabayMusicProvider(MusicProvider):
+    name = "pixabay"
+
+    def __init__(self, api_key: str | None = None, timeout: float = 15.0, **_: object) -> None:
+        self.api_key = _api_key(api_key)
+        self.timeout = timeout
+
+    def search(self, query: str, *, count: int = 1) -> list[MusicHit]:
+        params = urlencode({"key": self.api_key, "q": query, "per_page": count})
+        data = get_json("https://pixabay.com/api/audio/?" + params, timeout=self.timeout)
+        hits = []
+        for item in data.get("hits", []):
+            hits.append(
+                MusicHit(
+                    provider=self.name,
+                    title=item.get("tags") or "Pixabay track",
+                    url=item.get("audio") or "",
+                    duration=item.get("duration"),
+                    license="pixabay",
                 )
             )
         return hits

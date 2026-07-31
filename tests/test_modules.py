@@ -25,8 +25,8 @@ from modules.scenes.schemas import ScenePlan
 from modules.script.default import DefaultScriptModule
 from modules.script.schemas import ScriptOutput
 from providers.media_chain import build_media_chain
+from providers.music_chain import build_music_chain
 from providers.stubs.llm import StubLLMProvider
-from providers.stubs.music import StubMusicProvider
 from providers.stubs.tts import StubTTSProvider
 
 
@@ -75,9 +75,12 @@ def test_media_module(make_ctx, scenes, tmp_path):
 def test_audio_module(make_ctx, scenes, tmp_path):
     ctx = make_ctx(**{Stage.SCENES: scenes})
     cache = DiskCache(tmp_path / "cache")
-    module = DefaultAudioModule(StubTTSProvider(), StubMusicProvider(), StubAudioEngine(), cache)
+    module = DefaultAudioModule(StubTTSProvider(), build_music_chain(["stub"]), StubAudioEngine(), cache)
     result = _exercise(module, ctx, AudioOutput)
     assert result.output.master_path.exists()
+    assert result.output.mixed_audio_path == result.output.master_path
+    assert result.output.subtitle_path is not None and result.output.subtitle_path.exists()
+    assert result.output.duration > 0
     assert any(t.kind == "narration" for t in result.output.tracks)
     assert any(t.kind == "music" for t in result.output.tracks)
     assert ctx.store.exists(Stage.AUDIO, "mix_plan.json")

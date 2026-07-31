@@ -37,7 +37,10 @@ class MediaConfig(BaseModel):
 
 
 class MusicConfig(BaseModel):
-    provider: str = "stub"  # Pixabay Music preferred once implemented
+    # Ordered priority chain: Pixabay Music -> Local assets -> Stub.
+    providers: list[str] = Field(default_factory=lambda: ["stub"])
+    pixabay_api_key: str = ""  # or set PIXABAY_API_KEY
+    local_dir: str = "assets/music"
 
 
 class TTSConfig(BaseModel):
@@ -51,6 +54,20 @@ class AudioConfig(BaseModel):
     music_volume: float = 0.2
     narration_volume: float = 1.0
     master_gain: float = 1.0
+    music_fade: float = 1.0  # fade in/out (seconds) for the music bed
+    narration_fade: float = 0.2
+    # Script style -> music genre, driving the music search query.
+    # Configurable via ACCE_AUDIO__STYLE_GENRES={"educational":"calm",...} (JSON env).
+    style_genres: dict[str, str] = Field(
+        default_factory=lambda: {
+            "educational": "calm",
+            "storytelling": "cinematic",
+            "news": "neutral",
+            "documentary": "atmospheric",
+            "explainer": "ambient",
+            "top10": "upbeat",
+        }
+    )
 
 
 class ProductionConfig(BaseModel):

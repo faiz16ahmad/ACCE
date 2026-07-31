@@ -14,6 +14,7 @@ from core.orchestrator import PipelineOrchestrator
 from core.stages import Stage
 from memory.cache import DiskCache
 from providers.media_chain import build_media_chain
+from providers.music_chain import build_music_chain
 from providers.registry import get_provider
 
 from .audio.default import DefaultAudioModule
@@ -46,6 +47,11 @@ def build_orchestrator(
         api_keys={"pexels": settings.media.pexels_api_key, "pixabay": settings.media.pixabay_api_key},
     )
     engine = build_audio_engine(settings.audio.engine, settings.production.ffmpeg_path)
+    music = build_music_chain(
+        settings.music.providers,
+        api_keys={"pixabay": settings.music.pixabay_api_key},
+        local_dir=settings.music.local_dir,
+    )
 
     modules = {
         Stage.RESEARCH: DefaultResearchModule(llm, cache, config=settings.research),
@@ -54,7 +60,7 @@ def build_orchestrator(
         Stage.MEDIA: DefaultMediaModule(media, cache, config=settings.media),
         Stage.AUDIO: DefaultAudioModule(
             tts=get_provider("tts", settings.tts.provider),
-            music=get_provider("music", settings.music.provider),
+            music=music,
             engine=engine,
             cache=cache,
             config=settings.audio,

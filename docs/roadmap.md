@@ -9,10 +9,11 @@ Status legend: ✅ done · 🔜 in progress · ⏳ not started
 | 3 | Script module | Real LLM scriptwriting (hook/body/ending/narration) + quality metrics | ✅ |
 | 4 | Scene planner | Pacing + visual/keyword choices per scene | ✅ |
 | 5 | Media search | Pexels/Pixabay/Wikimedia providers + asset downloads + license handling | ✅ |
-| 6 | Production | TTS (real), music (Pixabay Music), ffmpeg mixing & rendering, thumbnail | ⏳ |
-| 7 | Quality | Hard failures + optional re-render of failing stages | ⏳ |
-| 8 | UI | Next.js + Tailwind dashboard (stage, logs, progress, preview, download) | ⏳ |
-| 9 | End-to-end | Publishable MP4 from a topic with minimal manual work | ⏳ |
+| 6 | Audio | TTS narration, music by style (Pixabay Music / Local / Stub), narration+music mix, sentence subtitles | ✅ |
+| 7 | Production | ffmpeg rendering (timeline assembly) + thumbnail | ⏳ |
+| 8 | Quality | Hard failures + optional re-render of failing stages | ⏳ |
+| 9 | UI | Next.js + Tailwind dashboard (stage, logs, progress, preview, download) | ⏳ |
+| 10 | End-to-end | Publishable MP4 from a topic with minimal manual work | ⏳ |
 
 ## Milestone 1 — done (this deliverable)
 
@@ -89,26 +90,45 @@ Status legend: ✅ done · 🔜 in progress · ⏳ not started
 - **Definition of done:** every scene has a selected, license-attributed asset
   (locally downloaded when a real provider/key is configured).
 
-## Milestone 6 — production (incl. audio)
+## Milestone 6 — audio (done)
 
-- Real TTS (e.g. ElevenLabs / Google) writing narration audio.
-- Music via Pixabay Music; `FfmpegAudioEngine` mixing per `AudioMixPlan`.
-- ffmpeg timeline assembly → final.mp4; thumbnail frame extraction.
+- **Narration** per scene through the configured `TTSProvider` (stub default,
+  key-free; real TTS vendors drop in behind the same interface).
+- **Music selection** through a provider chain — priority **Pixabay Music →
+  Local assets → Stub** (`MusicChain`) — driven by script style via a
+  configurable style→genre map (educational→calm, storytelling→cinematic,
+  news→neutral, documentary→atmospheric, …).
+- **Mix plan** (volume + fade in/out only in V1 — no beat sync, ducking,
+  dynamic/emotion-aware changes) → engine mix → master audio.
+- **Subtitles** generated from scene/narration timing (sentence-based, no
+  word-level alignment), independent of the mixer/engine, each cue with a
+  stable `cue_id` (`cue_0001`…).
+- `audio.json` contains `narration_path`, `music_path`, `mixed_audio_path`,
+  `subtitle_path`, `duration`, `metadata` (plus back-compat `master_path`,
+  `tracks`, `mix_plan_path`).
+- **Definition of done:** every scene has narration audio; a style-appropriate
+  music track is selected and mixed; sentence-timed subtitles ship with the
+  audio package.
+
+## Milestone 7 — production
+
+- ffmpeg timeline assembly → final.mp4; thumbnail frame extraction; burn-in
+  of subtitles. Requires real media assets + `FfmpegAudioEngine`.
 - **Dependency:** install ffmpeg on the host.
 - **Note:** beat-sync is V2; `AudioMixPlan` + `AudioEngine` seam is already in place.
 
-## Milestone 7 — quality
+## Milestone 8 — quality
 
 - Treat warnings/errors as gating signals; re-render only the failing stage
   (orchestrator already retries only the failing stage).
 - **Definition of done:** a job either ships or reports exactly which stage to fix.
 
-## Milestone 8 — UI
+## Milestone 9 — UI
 
 - Next.js + Tailwind dashboard in `frontend/web/` consuming the FastAPI API.
 - Views: current stage, live logs, progress bar, preview, final download.
 
-## Milestone 9 — end-to-end
+## Milestone 10 — end-to-end
 
 - One command from topic → publishable MP4 with minimal manual work.
 - E2E test that exercises every stage against real providers.
