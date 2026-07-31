@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from config.settings import Settings
 
@@ -22,3 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
+
+# Serve per-job artifacts (out/<job_id>/<stage>/<file>) at /artifacts/<job_id>/<stage>/<file>.
+settings.paths.output_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/artifacts", StaticFiles(directory=str(settings.paths.output_dir)), name="artifacts")

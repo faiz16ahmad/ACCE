@@ -12,7 +12,7 @@ Status legend: ✅ done · 🔜 in progress · ⏳ not started
 | 6 | Audio | TTS narration, music by style (Pixabay Music / Local / Stub), narration+music mix, sentence subtitles | ✅ |
 | 7 | Production | ffmpeg rendering (timeline assembly) + thumbnail | ✅ |
 | 8 | Quality | Deterministic validation, severity, scoring, retry recommendation | ✅ |
-| 9 | UI | Next.js + Tailwind dashboard (stage, logs, progress, preview, download) | ⏳ |
+| 9 | UI | Next.js + Tailwind dashboard (projects, generate, live progress, artifacts, preview, quality, logs, settings) | ✅ |
 | 10 | End-to-end | Publishable MP4 from a topic with minimal manual work | ⏳ |
 
 ## Milestone 1 — done (this deliverable)
@@ -160,10 +160,26 @@ Status legend: ✅ done · 🔜 in progress · ⏳ not started
 - **Definition of done:** a job either ships or reports exactly which stage to
   fix, with a deterministic score and human-readable guidance.
 
-## Milestone 9 — UI
+## Milestone 9 — UI (done)
 
-- Next.js + Tailwind dashboard in `frontend/web/` consuming the FastAPI API.
-- Views: current stage, live logs, progress bar, preview, final download.
+- **ACCE Studio** — Next.js (App Router) + Tailwind CSS + TypeScript in
+  `frontend/web/`, dark-first and hand-rolled (Cursor/Linear aesthetic).
+- **Views**: Home/Projects (topic, status, quality score), Generate (topic,
+  duration, style, instructions), Run workspace with **live stage-by-stage
+  pipeline progress** + log viewer, **video preview + download**, **artifact
+  explorer** (per-stage JSON/text/image/video viewers), **quality panel**
+  (score gauge, warnings/errors, per-issue suggested fixes, retry advice),
+  and **logs**; Settings (API base + theme).
+- **Generate workflow**: Topic → Generate → live progress → artifacts →
+  preview → quality → download, all driven by `POST /api/jobs` +
+  800 ms polling.
+- **API additions (strictly additive)**: `/artifacts/*` static mount,
+  `GET /api/jobs` (project list incl. durable `out/` scan),
+  `GET /api/jobs/{id}/artifacts`, and `GET /api/jobs/{id}` falls back to
+  `out/<id>/meta/job.json` so history survives API restarts. Existing
+  endpoints are unchanged.
+- State: React Context (theme + API base) + polling hooks; no state library.
+- 9 unit tests (`vitest`) + `next build` type-check + ESLint clean.
 
 ## Milestone 10 — end-to-end
 

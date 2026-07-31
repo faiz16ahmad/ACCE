@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+/* Class-based light mode; the default (no class) is the dark theme. */
+@custom-variant light (&:where(.light, .light *));
+
+:root {
+  --background: #0b0d13;
+  --surface: #141824;
+  --surface-2: #1b2130;
+  --border: #262d3f;
+  --foreground: #e7eaf3;
+  --muted: #8b93a7;
+  --accent: #818cf8;
+  --accent-strong: #6366f1;
+  --on-accent: #0b0d13;
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --danger: #f87171;
+}
+
+:root.light {
+  --background: #fafafa;
+  --surface: #ffffff;
+  --surface-2: #f4f4f5;
+  --border: #e4e4e7;
+  --foreground: #18181b;
+  --muted: #71717a;
+  --accent: #4f46e5;
+  --accent-strong: #4338ca;
+  --on-accent: #ffffff;
+  --ok: #059669;
+  --warn: #d97706;
+  --danger: #dc2626;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-on-accent: var(--on-accent);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* Thin, unobtrusive scrollbars for the dark theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-2) transparent;
+}
+
+@keyframes indeterminate {
+  0% {
+    margin-left: -33%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}

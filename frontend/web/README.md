@@ -1,29 +1,56 @@
-# ACCE Dashboard (placeholder — milestone 8)
+# ACCE Studio (web UI)
 
-The V1 skeleton ships the backend only. This directory is where the
-**Next.js + Tailwind** dashboard lands in milestone 8.
+Next.js (App Router) + Tailwind CSS + TypeScript dashboard for the ACCE
+pipeline. Turns a topic into a narrated, illustrated video through the
+existing FastAPI backend in `../api`.
 
-## Planned UI (from the master prompt)
+## Views
 
-| View        | Shows                                                        |
-| ----------- | ------------------------------------------------------------ |
-| Dashboard   | Start a new job (topic, instructions, duration, style)       |
-| Progress    | Current stage + live log stream                              |
-| Preview     | Scene thumbnails, narration, selected assets                  |
-| Download    | Final MP4, subtitles, thumbnail, title, description           |
+| View            | What it does                                                       |
+| --------------- | ------------------------------------------------------------------ |
+| `/`             | Projects — every run, with status and quality score                |
+| `/generate`     | New project — topic, duration, style, instructions                 |
+| `/runs/[id]`    | Run workspace — live progress, preview, artifacts, quality, logs   |
+| `/settings`     | API base URL + connection test, light/dark theme                   |
+
+## Development
+
+```bash
+# 1. Backend (project root)
+uv run python main.py api          # http://127.0.0.1:8000
+
+# 2. Frontend (this directory)
+npm install
+npm run dev                        # http://127.0.0.1:3000
+```
+
+Point the UI at a different backend with `NEXT_PUBLIC_API_URL` (or via the
+Settings page, persisted in `localStorage`).
+
+## Scripts
+
+```bash
+npm run dev    # dev server
+npm run build  # production build (includes type check)
+npm run lint   # eslint
+npm test       # vitest (lib helpers)
+```
 
 ## Backend contract
 
-The dashboard talks to the FastAPI app in `../api`:
+The UI consumes the FastAPI app in `../api`:
 
-- `POST /api/jobs`  — start a job (`{topic, instructions, duration, style}`)
-- `GET /api/jobs/{id}` — status, current stage, result snapshot
-- `GET /api/jobs/{id}/logs` — recent log lines
+- `GET /api/health`
+- `POST /api/jobs` — start a job `{topic, instructions, duration, style}`
+- `GET /api/jobs` — project list (in-memory + durable `out/` scan)
+- `GET /api/jobs/{id}` — live job snapshot (`ctx.dump()`); falls back to
+  `out/<id>/meta/job.json` for runs from before an API restart
+- `GET /api/jobs/{id}/logs`
+- `GET /api/jobs/{id}/artifacts` — per-stage file tree with URLs
+- `/artifacts/...` — static file serving of `out/`
 
-## Getting started (when implemented)
+## Design
 
-```bash
-npx create-next-app@latest . --ts --tailwind --eslint
-```
-
-Point `NEXT_PUBLIC_API_URL` at the FastAPI origin (default `http://127.0.0.1:8000`).
+Dark-first theme (class toggle, persisted), hand-rolled Tailwind primitives,
+single accent color, generous whitespace — modelled on Cursor / Linear rather
+than an admin dashboard. See `app/globals.css` for the semantic color tokens.

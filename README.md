@@ -23,8 +23,13 @@ and syncing the mixed audio (`final_video.mp4` + `timeline.json` +
 every stage output, classifies issues INFO/WARNING/ERROR, scores the job
 0–100, and recommends (never performs) the stage to retry (`quality.json`).
 LLM + provider-driven, with deterministic fallbacks so the key-free stub demo
-still runs end-to-end. The UI dashboard and a full publishable-MP4 e2e land in
-milestones 9–10 ([roadmap](docs/roadmap.md)).
+still runs end-to-end. **ACCE Studio** (`frontend/web/`, Next.js + Tailwind +
+TypeScript) is a dark-first dashboard on top of the API: project list, a
+Generate flow (topic → duration → style), live stage-by-stage pipeline
+progress, a per-stage **artifact explorer**, **video preview + download**, a
+**quality panel** (score, warnings/errors, suggested fixes, retry advice), and
+logs. A full publishable-MP4 e2e lands in
+milestone 10 ([roadmap](docs/roadmap.md)).
 
 Real providers are selected through `.env`, never code changes. The stub
 remains the default so the pipeline runs without keys; OpenAI / Anthropic /
@@ -57,6 +62,9 @@ uv run python main.py status <job_id>
 
 # Run the dashboard API:
 uv run python main.py api           # then GET http://127.0.0.1:8000/api/health
+
+# Run the ACCE Studio web UI (separate terminal):
+cd frontend/web && npm install && npm run dev   # http://127.0.0.1:3000
 ```
 
 Every stage writes its output under `out/<job_id>/<stage>/` — e.g.
@@ -109,4 +117,5 @@ uv run pytest
 | ✅     | 6 · Audio (TTS narration, style music, mix, sentence subtitles) |
 | ✅     | 7 · Production (timeline + render manifest, FFmpeg renderer, transitions) |
 | ✅     | 8 · Quality (deterministic validation, severity, score, retry recommendation) |
-| ⏳     | 9–10 · UI, e2e |
+| ✅     | 9 · ACCE Studio UI (projects, generate, live progress, artifacts, preview, quality, logs) |
+| ⏳     | 10 · End-to-end publishable MP4 |
