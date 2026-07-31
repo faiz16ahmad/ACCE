@@ -58,7 +58,7 @@ def test_scenes_module(make_ctx, script):
     result = _exercise(DefaultScenesModule(StubLLMProvider()), ctx, ScenePlan)
     assert result.output.scenes
     assert all(s.duration > 0 for s in result.output.scenes)
-    assert ctx.store.exists(Stage.SCENES, "scenes.json")
+    assert ctx.store.exists(Stage.SCENES, "scene_plan.json")
 
 
 def test_media_module(make_ctx, scenes, tmp_path):

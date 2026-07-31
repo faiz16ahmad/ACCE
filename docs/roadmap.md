@@ -7,7 +7,7 @@ Status legend: ✅ done · 🔜 in progress · ⏳ not started
 | 1 | Skeleton project | Folders, orchestrator, interfaces, stub modules, pydantic contracts, config, docs | ✅ |
 | 2 | Research module | Real LLM research (Gemini provider) + live-fetch fact verification | ✅ |
 | 3 | Script module | Real LLM scriptwriting (hook/body/ending/narration) + quality metrics | ✅ |
-| 4 | Scene planner | Pacing + visual/keyword choices per scene | ⏳ |
+| 4 | Scene planner | Pacing + visual/keyword choices per scene | ✅ |
 | 5 | Media search | Pexels/Pixabay/Wikimedia providers + asset downloads + license handling | ⏳ |
 | 6 | Production | TTS (real), music (Pixabay Music), ffmpeg mixing & rendering, thumbnail | ⏳ |
 | 7 | Quality | Hard failures + optional re-render of failing stages | ⏳ |
@@ -53,10 +53,20 @@ Status legend: ✅ done · 🔜 in progress · ⏳ not started
 - **Definition of done:** narration reads naturally, follows the research,
   and reports pacing/readability metrics.
 
-## Milestone 4 — scene planner
+## Milestone 4 — scene planner (done)
 
-- Real per-scene `visual_description` and `search_keywords` from the LLM.
-- Duration distribution respecting `UserInput.duration`.
+- Converts `ScriptOutput` narration into a timed `ScenePlan` — one scene per
+  narration block, durations proportional to each segment's word share of the
+  script's estimated length.
+- Per-scene `visual_description`, `search_keywords`, `visual_type`
+  (stock_video|stock_image|animation|infographic|map|text_overlay), and
+  `transition` — LLM-written when a real provider is configured, deterministic
+  template as the stub/offline fallback and safety net. Only plans visuals:
+  no research, media retrieval, or rendering.
+- New artifact: `scene_plan.json` (fields: scene_number, narration_segment,
+  estimated_duration, visual_description, search_keywords, visual_type,
+  transition). Older names `scene`/`narration`/`duration` kept as read-only
+  aliases so media/audio/quality need no changes.
 - **Definition of done:** scenes map 1:1 onto narration beats.
 
 ## Milestone 5 — media

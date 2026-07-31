@@ -34,7 +34,7 @@ def test_end_to_end_stub_pipeline(tmp_path):
     for stage, name in [
         (Stage.RESEARCH, "research.json"),
         (Stage.SCRIPT, "script.json"),
-        (Stage.SCENES, "scenes.json"),
+        (Stage.SCENES, "scene_plan.json"),
         (Stage.MEDIA, "media.json"),
         (Stage.AUDIO, "audio.json"),
         (Stage.PRODUCTION, "subtitles.srt"),

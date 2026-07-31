@@ -30,13 +30,21 @@ def test_stage_enum_order():
 def test_scene_contract_shape():
     from modules.scenes.schemas import Scene
 
-    scene = Scene(scene=1, duration=5, narration="n", visual_description="v", search_keywords=["a", "b"])
+    scene = Scene(
+        scene_number=1,
+        estimated_duration=5.0,
+        narration_segment="n",
+        visual_description="v",
+        search_keywords=["a", "b"],
+    )
     assert scene.model_dump() == {
-        "scene": 1,
-        "duration": 5,
-        "narration": "n",
+        "scene_number": 1,
+        "narration_segment": "n",
+        "estimated_duration": 5.0,
         "visual_description": "v",
         "search_keywords": ["a", "b"],
+        "visual_type": "stock_video",
+        "transition": "cut",
     }
 
 

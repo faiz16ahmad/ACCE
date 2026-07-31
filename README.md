@@ -4,14 +4,16 @@ Turn a topic + a few instructions into a video's full production package:
 research report, script, scene timeline, media assets, narration, subtitles,
 thumbnail, title, and description.
 
-**V1 status:** milestone 3 — the skeleton (milestone 1) is frozen, the
-**Research stage** drafts structured research through the **Gemini** LLM
-provider and **fetches every cited source** to verify facts, and the **Script
-stage** writes Hook → Body → Ending narration from that research (LLM-written,
-with a deterministic template fallback for the key-free stub demo). Research
-and Script respect style + duration and emit quality metrics. All other
-stages still run on stubs. Real media / TTS / ffmpeg integrations land in
-milestones 4–9 ([roadmap](docs/roadmap.md)).
+**V1 status:** milestone 4 — the skeleton (milestone 1) is frozen, and the
+**Research → Script → Scene Planner** chain is real: research drafts and
+verifies facts via **Gemini** + live source fetch; the **Script** stage writes
+Hook → Body → Ending narration (LLM-written, template fallback) with quality
+metrics; the **Scene Planner** converts that narration into a timed
+`scene_plan.json` (per-scene durations, visual descriptions, stock-optimized
+keywords, visual type, transition). LLM-driven, with deterministic fallbacks
+so the key-free stub demo still runs end-to-end. Media / audio / production
+stages still run on stubs; real integrations land in milestones 5–9
+([roadmap](docs/roadmap.md)).
 
 Real providers are selected through `.env`, never code changes. The stub
 remains the default so the pipeline runs without keys; OpenAI / Anthropic /
@@ -91,4 +93,5 @@ uv run pytest
 | ✅     | 1 · Skeleton |
 | ✅     | 2 · Research (Gemini + live-fetch verification) |
 | ✅     | 3 · Script (LLM Hook→Body→Ending + metrics) |
-| ⏳     | 4–9 · Scenes, media, production, quality, UI, e2e |
+| ✅     | 4 · Scene planner (LLM visuals, paced scene_plan.json) |
+| ⏳     | 5–9 · Media, production, quality, UI, e2e |
