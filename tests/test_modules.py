@@ -86,19 +86,25 @@ def test_audio_module(make_ctx, scenes, tmp_path):
     assert ctx.store.exists(Stage.AUDIO, "mix_plan.json")
 
 
-def test_production_module(make_ctx, research, script, scenes, audio):
+def test_production_module(make_ctx, research, script, scenes, media, audio):
     ctx = make_ctx(
         **{
             Stage.RESEARCH: research,
             Stage.SCRIPT: script,
             Stage.SCENES: scenes,
+            Stage.MEDIA: media,
             Stage.AUDIO: audio,
         }
     )
     result = _exercise(DefaultProductionModule(), ctx, ProductionOutput)
-    assert result.output.subtitle_path.exists()
+    assert result.output.video_path.exists()  # stub renderer marker
+    assert result.output.subtitle_path.exists()  # fallback subtitles (audio fixture has none)
     assert result.output.title
-    assert ctx.store.exists(Stage.PRODUCTION, "subtitles.srt")
+    assert result.output.duration > 0
+    assert ctx.store.exists(Stage.PRODUCTION, "final_video.mp4")
+    assert ctx.store.exists(Stage.PRODUCTION, "timeline.json")
+    assert ctx.store.exists(Stage.PRODUCTION, "render_manifest.json")
+    assert ctx.store.exists(Stage.PRODUCTION, "render_log.json")
 
 
 def test_quality_module(make_ctx, research, script, scenes, media, audio):

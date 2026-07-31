@@ -10,7 +10,7 @@ Status legend: ✅ done · 🔜 in progress · ⏳ not started
 | 4 | Scene planner | Pacing + visual/keyword choices per scene | ✅ |
 | 5 | Media search | Pexels/Pixabay/Wikimedia providers + asset downloads + license handling | ✅ |
 | 6 | Audio | TTS narration, music by style (Pixabay Music / Local / Stub), narration+music mix, sentence subtitles | ✅ |
-| 7 | Production | ffmpeg rendering (timeline assembly) + thumbnail | ⏳ |
+| 7 | Production | ffmpeg rendering (timeline assembly) + thumbnail | ✅ |
 | 8 | Quality | Hard failures + optional re-render of failing stages | ⏳ |
 | 9 | UI | Next.js + Tailwind dashboard (stage, logs, progress, preview, download) | ⏳ |
 | 10 | End-to-end | Publishable MP4 from a topic with minimal manual work | ⏳ |
@@ -110,12 +110,29 @@ Status legend: ✅ done · 🔜 in progress · ⏳ not started
   music track is selected and mixed; sentence-timed subtitles ship with the
   audio package.
 
-## Milestone 7 — production
+## Milestone 7 — production (done)
 
-- ffmpeg timeline assembly → final.mp4; thumbnail frame extraction; burn-in
-  of subtitles. Requires real media assets + `FfmpegAudioEngine`.
-- **Dependency:** install ffmpeg on the host.
-- **Note:** beat-sync is V2; `AudioMixPlan` + `AudioEngine` seam is already in place.
+- **Timeline builder**: explicit timeline (per scene `scene_number`, `asset_id`,
+  `start_time`, `end_time`, `transition`) from ScenePlan durations — timing is
+  never inferred from media length.
+- **Render manifest**: the renderer's complete, self-contained input
+  (`render_manifest.json`): timeline, per-scene asset references, audio +
+  subtitle references, render settings (resolution, fps, codec), and transition
+  metadata. Renderers consume only the manifest — no ScenePlan / MediaPlan /
+  AudioOutput — keeping backends isolated, replaceable, and renders replayable.
+- **Renderer interface**: `StubRenderer` (keeps the pipeline runnable without
+  FFmpeg) and `FFmpegRenderer` (image scenes via `-loop`, video scenes via
+  `-stream_loop -1` + `trim` to the planned duration, text-overlay/placeholder
+  scenes via a color source + `drawtext`), subtitle burn-in, and audio mapped
+  from `mixed_audio_path` for exact timeline sync.
+- **Transitions** (V1): `cut`, `fade`, `dissolve` (fade-through-black), and
+  `fade_to_black`.
+- Outputs: `final_video.mp4`, `timeline.json`, `render_manifest.json`,
+  `render_log.json`; `ProductionOutput` carries `video_path`, `timeline_path`,
+  `render_manifest_path`, `render_log_path`, `duration`, `metadata`.
+- **Definition of done:** a render job is fully described by its manifest; the
+  stub stays key-free/runnable, and the FFmpeg renderer is unit-testable
+  without the binary (command generation + failure handling).
 
 ## Milestone 8 — quality
 

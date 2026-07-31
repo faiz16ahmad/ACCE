@@ -71,10 +71,12 @@ class AudioConfig(BaseModel):
 
 
 class ProductionConfig(BaseModel):
+    renderer: str = "stub"  # "stub" | "ffmpeg"
     width: int = 1920
     height: int = 1080
     fps: int = 30
     ffmpeg_path: str | None = None
+    fade: float = 0.5  # V1 transition fade duration (seconds)
 
 
 class ScriptConfig(BaseModel):

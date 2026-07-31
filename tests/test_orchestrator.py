@@ -37,7 +37,7 @@ def test_end_to_end_stub_pipeline(tmp_path):
         (Stage.SCENES, "scene_plan.json"),
         (Stage.MEDIA, "media_plan.json"),
         (Stage.AUDIO, "audio.json"),
-        (Stage.PRODUCTION, "subtitles.srt"),
+        (Stage.PRODUCTION, "final_video.mp4"),
         (Stage.QUALITY, "report.json"),
     ]:
         assert store.exists(stage, name), f"{stage.value} missing {name}"

@@ -4,20 +4,25 @@ Turn a topic + a few instructions into a video's full production package:
 research report, script, scene timeline, media assets, narration, subtitles,
 thumbnail, title, and description.
 
-**V1 status:** milestone 6 — the skeleton (milestone 1) is frozen, and the
-**Research → Script → Scene Planner → Media → Audio** chain is real: research
-drafts and verifies facts via **Gemini** + live source fetch; the **Script**
-stage writes Hook → Body → Ending narration (LLM-written, template fallback)
-with quality metrics; the **Scene Planner** converts that narration into a
-timed `scene_plan.json`; the **Media** stage retrieves the best visual asset
-per scene through a **Cache → Pexels → Pixabay → Wikimedia** chain with
-deterministic ranking and auto-caching downloads (`media_plan.json`); the
-**Audio** stage generates narration (configured TTS), selects background music
-by script style (**Pixabay Music → Local → Stub**), mixes with volume + fades,
-and writes sentence-based subtitles (`audio.json` + `subtitles.srt`). LLM +
+**V1 status:** milestone 7 — the skeleton (milestone 1) is frozen, and the
+**Research → Script → Scene Planner → Media → Audio → Production** chain is
+real: research drafts and verifies facts via **Gemini** + live source fetch;
+the **Script** stage writes Hook → Body → Ending narration (LLM-written,
+template fallback) with quality metrics; the **Scene Planner** converts that
+narration into a timed `scene_plan.json`; the **Media** stage retrieves the
+best visual asset per scene through a **Cache → Pexels → Pixabay → Wikimedia**
+chain with deterministic ranking and auto-caching downloads
+(`media_plan.json`); the **Audio** stage generates narration (configured
+TTS), selects background music by script style (**Pixabay Music → Local →
+Stub**), mixes with volume + fades, and writes sentence-based subtitles
+(`audio.json` + `subtitles.srt`); the **Production** stage builds an explicit
+timeline and a self-contained **render manifest** (`render_manifest.json`) and
+renders through an isolated Renderer interface — **stub** (default, no
+FFmpeg) or **FFmpeg** — burning in subtitles and syncing the mixed audio
+(`final_video.mp4` + `timeline.json` + `render_log.json`). LLM +
 provider-driven, with deterministic fallbacks so the key-free stub demo still
-runs end-to-end. Production / quality stages still run on stubs; real
-integrations land in milestones 7–10 ([roadmap](docs/roadmap.md)).
+runs end-to-end. Quality still runs on stubs; real integrations land in
+milestones 8–10 ([roadmap](docs/roadmap.md)).
 
 Real providers are selected through `.env`, never code changes. The stub
 remains the default so the pipeline runs without keys; OpenAI / Anthropic /
@@ -100,4 +105,5 @@ uv run pytest
 | ✅     | 4 · Scene planner (LLM visuals, paced scene_plan.json) |
 | ✅     | 5 · Media retrieval (Pexels/Pixabay/Wikimedia, ranking, downloads) |
 | ✅     | 6 · Audio (TTS narration, style music, mix, sentence subtitles) |
-| ⏳     | 7–10 · Production, quality, UI, e2e |
+| ✅     | 7 · Production (timeline + render manifest, FFmpeg renderer, transitions) |
+| ⏳     | 8–10 · Quality, UI, e2e |
