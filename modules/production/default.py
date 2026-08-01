@@ -58,11 +58,13 @@ class DefaultProductionModule(ProductionModule):
 
         # 1. Timeline — use actual narration durations from the audio stage
         #    when available, falling back to the scene plan's LLM estimates.
+        ctx.progress("Building timeline...")
         narr_durations: dict[int, float] = {}
         for i, track in enumerate(audio.tracks):
             if track.kind == "narration" and track.duration:
                 narr_durations[i + 1] = track.duration
         timeline = build_timeline(scenes, media, narr_durations)
+        ctx.progress(f"Timeline: {timeline.duration:.1f}s, {len(timeline.scenes)} scenes")
         timeline_artifact = self._save(ctx, "timeline.json", timeline)
         written.append(timeline_artifact)
 
@@ -80,6 +82,7 @@ class DefaultProductionModule(ProductionModule):
         written.append(manifest_artifact)
 
         # 4. Render (stub by default; FFmpeg when configured).
+        ctx.progress("Rendering video...")
         video_path = ctx.store.resolve(self.name, "final_video.mp4")
         try:
             result = self.renderer.render(manifest, video_path)

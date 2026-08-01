@@ -79,6 +79,9 @@ class PipelineOrchestrator:
         return ctx
 
     def _run_stage(self, module: StageModule, ctx: JobContext, index: int, total: int) -> StageResult:
+        # Inject progress callback so stages can emit intra-stage events.
+        ctx._progress_cb = self.on_progress
+
         for attempt in range(self.retries + 1):
             started = time.time()
             try:
@@ -88,7 +91,11 @@ class PipelineOrchestrator:
                 result.duration_ms = int((time.time() - started) * 1000)
                 result.ok = True
                 result.retries = attempt
-                self._emit(ctx, module.name.value, ProgressStatus.SUCCEEDED, "ok", self._percent(index, total))
+                elapsed = time.time() - started
+                self._emit(
+                    ctx, module.name.value, ProgressStatus.SUCCEEDED,
+                    f"ok ({elapsed:.1f}s)", self._percent(index, total),
+                )
                 return result
             except Exception as exc:  # noqa: BLE001 - orchestrator decides retry/fail
                 log.exception("stage %s failed (attempt %d/%d)", module.name.value, attempt + 1, self.retries + 1)
@@ -97,7 +104,7 @@ class PipelineOrchestrator:
                         ctx,
                         module.name.value,
                         ProgressStatus.RETRYING,
-                        f"retrying ({attempt + 1}/{self.retries})",
+                        f"failed: {type(exc).__name__}: {exc}\nRetrying ({attempt + 1}/{self.retries})...",
                         self._percent(index, total),
                     )
                     continue
@@ -113,6 +120,11 @@ class PipelineOrchestrator:
         log.info("[%s] %s: %s", event.stage, event.status.value, event.message)
         if self.on_progress is not None:
             self.on_progress(event)
+
+    def _emit_stage(self, ctx: JobContext, status: ProgressStatus, message: str, percent: float) -> None:
+        """Emit an event for the current stage."""
+        if ctx.current_stage is not None:
+            self._emit(ctx, ctx.current_stage.value, status, message, percent)
 
     @staticmethod
     def _percent(index: int, total: int) -> float:

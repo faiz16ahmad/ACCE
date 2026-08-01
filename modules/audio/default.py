@@ -104,15 +104,20 @@ class DefaultAudioModule(AudioModule):
             raise RuntimeError("JobContext.store is not set — run through the orchestrator")
 
         # 1. Narration
+        ctx.progress("Generating narration...")
         narration_tracks, written = self._narration(ctx, plan)
+        for i, track in enumerate(narration_tracks, 1):
+            ctx.progress(f"Scene {i} narration: {track.duration:.1f}s")
 
         # 2. Music selection (driven by script style)
+        ctx.progress("Selecting background music...")
         genre, music_track = self._select_music(ctx, script)
 
         # 3. Mix plan
         mix_plan = self._build_mix_plan(narration_tracks, music_track)
 
         # 4. Audio mixing
+        ctx.progress("Mixing audio...")
         suffix = ".m4a" if getattr(self.engine, "name", "stub") == "ffmpeg" else ".txt"
         mixed = ctx.store.resolve(self.name, f"master_audio{suffix}")
         self.engine.mix(mix_plan, mixed)
@@ -136,6 +141,7 @@ class DefaultAudioModule(AudioModule):
         written.append(Artifact(stage=self.name.value, name=narration_path.name, path=narration_path))
 
         duration = self._plan_duration(mix_plan)
+        ctx.progress(f"Master audio: {duration:.1f}s")
         tracks = [*narration_tracks, music_track] if music_track else narration_tracks
         output = AudioOutput(
             narration_path=narration_path,

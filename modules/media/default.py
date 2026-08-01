@@ -68,8 +68,17 @@ class DefaultMediaModule(MediaModule):
 
     def run(self, ctx: JobContext) -> StageResult:
         plan: ScenePlan = ctx.results[Stage.SCENES].output
-        assets = [self._retrieve(ctx, scene, index) for index, scene in enumerate(plan.scenes, start=1)]
+        total = len(plan.scenes)
+        assets = []
+        for index, scene in enumerate(plan.scenes, start=1):
+            ctx.progress(f"Searching scene {index}/{total}...")
+            asset = self._retrieve(ctx, scene, index)
+            assets.append(asset)
+            status = "downloaded" if asset.local_path else "placeholder"
+            ctx.progress(f"Scene {index}/{total}: {status}")
         output = MediaPlan(assets=assets)
+        downloaded = sum(1 for a in assets if a.local_path)
+        ctx.progress(f"Complete: {downloaded}/{total} assets downloaded")
         return StageResult(
             stage=self.name,
             ok=True,

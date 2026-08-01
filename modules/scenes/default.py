@@ -66,9 +66,14 @@ class DefaultScenesModule(ScenesModule):
         script: ScriptOutput = ctx.results[Stage.SCRIPT].output
         total = ctx.input.duration or 180
         style = getattr(script, "style", "") or ctx.input.style or "explainer"
+        ctx.progress("Planning scenes...")
         plan = plan_scenes(script, total, ctx.input.topic, style=style)
+        ctx.progress(f"Generated {len(plan.scenes)} scenes")
         if self.llm.name != "stub":
+            ctx.progress("Generating visual descriptions...")
             self._apply_llm_visuals(plan, ctx.input.topic, style)
+        total_dur = sum(s.estimated_duration for s in plan.scenes)
+        ctx.progress(f"Timeline: {total_dur:.1f}s total")
         return StageResult(
             stage=self.name,
             ok=True,

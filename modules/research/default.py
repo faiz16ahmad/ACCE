@@ -128,14 +128,24 @@ class DefaultResearchModule(ResearchModule):
         cache_key = f"{SCHEMA_VERSION}:{ctx.input.topic}"
         if self.cache is not None and (cached := self.cache.get(CACHE_NAMESPACE, cache_key)):
             log.info("research: cache hit for %r", ctx.input.topic)
+            ctx.progress("Loaded from cache")
             output = ResearchOutput.model_validate(cached)
             return StageResult(
                 stage=self.name, ok=True, output=output, artifacts_written=[self._save(ctx, "research.json", output)]
             )
 
+        ctx.progress("Generating research draft...")
         output = self._draft(ctx)
+        ctx.progress(f"Found {len(output.sources)} sources, {len(output.facts)} facts")
+
+        ctx.progress("Verifying sources...")
         output = self._verify(output, ctx)
+        fetched = sum(1 for s in output.sources if s.fetched)
+        verified = sum(1 for f in output.facts if f.verified)
+        ctx.progress(f"Verified {fetched}/{len(output.sources)} sources, {verified}/{len(output.facts)} facts")
+
         if self.config.refine:
+            ctx.progress("Refining facts...")
             output = self._refine(output, ctx)
         output.metadata = self._build_metadata(ctx, output)
 

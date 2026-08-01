@@ -97,13 +97,18 @@ class DefaultScriptModule(ScriptModule):
         duration = ctx.input.duration
 
         if self.llm.name == "stub":
+            ctx.progress("Generating script from template...")
             script = template_script(research, style)
             generated_by = "template"
         else:
+            ctx.progress("Generating narration script...")
             script = self._llm_script(research, style, duration)
             generated_by = f"llm:{self.llm.name}"
 
         finalize(script, style, duration, self.config.words_per_minute, generated_by)
+        wc = script.metrics.word_count if script.metrics else 0
+        est = script.metrics.estimated_duration if script.metrics else 0
+        ctx.progress(f"Script: {wc} words, ~{est:.0f}s estimated")
         return StageResult(
             stage=self.name, ok=True, output=script, artifacts_written=[self._save(ctx, "script.json", script)]
         )

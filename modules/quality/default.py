@@ -39,11 +39,17 @@ class DefaultQualityModule(QualityModule):
 
     def run(self, ctx: JobContext) -> StageResult:
         issues: list[QualityIssue] = []
+        ctx.progress("Checking research...")
         self._check_research(ctx, issues)
+        ctx.progress("Checking script...")
         self._check_script(ctx, issues)
+        ctx.progress("Checking scenes...")
         self._check_scenes(ctx, issues)
+        ctx.progress("Checking media...")
         self._check_media(ctx, issues)
+        ctx.progress("Checking audio...")
         self._check_audio(ctx, issues)
+        ctx.progress("Checking production...")
         self._check_production(ctx, issues)
         self._check_overall(ctx, issues)
 
@@ -61,6 +67,7 @@ class DefaultQualityModule(QualityModule):
             metadata=self._metadata(ctx, passed, score, errors, warnings, issues),
             summary=(f"{len(issues)} issue(s): {len(errors)} error(s), {len(warnings)} warning(s); passed={passed}"),
         )
+        ctx.progress(f"Score: {score:.0f}/100 — {'PASSED' if passed else 'FAILED'}")
         return StageResult(
             stage=self.name,
             ok=True,

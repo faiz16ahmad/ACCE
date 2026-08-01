@@ -15,6 +15,7 @@ import time
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 from config.settings import Settings
@@ -109,7 +110,8 @@ class JobStore:
     def _log_progress(record: JobRecord):
         def on_progress(event) -> None:
             record.current_stage = event.stage
-            record.logs.append(f"[{event.stage}] {event.status.value}: {event.message}")
+            ts = datetime.now().strftime("%H:%M:%S")
+            record.logs.append(f"{ts} [{event.stage}] {event.status.value}: {event.message}")
         return on_progress
 
 

@@ -93,10 +93,23 @@ class JobContext(BaseModel):
     # Injected at runtime by the orchestrator; not part of the persisted
     # record. Typed Any to avoid a core<->memory import cycle.
     store: Any = None
+    _progress_cb: Any = None
+
+    def progress(self, message: str) -> None:
+        """Emit a progress event from within a stage."""
+        if self._progress_cb is not None and self.current_stage is not None:
+            self._progress_cb(
+                ProgressEvent(
+                    stage=self.current_stage.value,
+                    status=ProgressStatus.STARTED,
+                    message=message,
+                    percent=0.0,
+                )
+            )
 
     def dump(self) -> dict[str, Any]:
         """JSON-serializable snapshot (used for job status files and the API)."""
-        return self.model_dump(mode="json", exclude={"store"})
+        return self.model_dump(mode="json", exclude={"store", "_progress_cb"})
 
     def elapsed_ms(self) -> int:
         end = self.finished_at or time.time()
