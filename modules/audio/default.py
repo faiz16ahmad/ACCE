@@ -15,6 +15,9 @@ changes, or emotion-aware soundtracks (those are future milestones).
 from __future__ import annotations
 
 import logging
+import re
+import subprocess
+from pathlib import Path
 
 from config.settings import AudioConfig
 from core.errors import InputValidationError
@@ -32,6 +35,38 @@ from .interface import AudioModule
 from .schemas import AudioMetadata, AudioMixPlan, AudioOutput, AudioTrack, MixSegment
 from .subtitles import build_cues, cues_to_srt
 
+
+def _measure_audio_duration(path: Path, ffmpeg_path: str = "ffmpeg") -> float:
+    """Measure actual audio file duration via ffprobe, falling back to 0 on failure."""
+    # Try ffprobe next to the ffmpeg binary first
+    ffprobe_path = Path(ffmpeg_path)
+    if ffprobe_path.is_file():
+        ffprobe = ffprobe_path.parent / "ffprobe.exe"
+    else:
+        ffprobe = Path("ffprobe")
+    try:
+        proc = subprocess.run(
+            [str(ffprobe), "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+            capture_output=True, text=True, timeout=10,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return float(proc.stdout.strip())
+    except Exception:
+        pass
+    # Fallback: use ffmpeg -i to parse Duration line
+    try:
+        proc = subprocess.run(
+            [ffmpeg_path, "-hide_banner", "-i", str(path), "-f", "null", "-"],
+            capture_output=True, text=True, timeout=10,
+        )
+        m = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.\d+)", proc.stderr)
+        if m:
+            return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+    except Exception:
+        pass
+    return 0.0
+
 log = logging.getLogger(__name__)
 
 MUSIC_CACHE_NAMESPACE = "audio"
@@ -47,6 +82,7 @@ class DefaultAudioModule(AudioModule):
         cache: DiskCache | None = None,
         config: AudioConfig | None = None,
         voice: str = "en-US-AriaNeural",
+        ffmpeg_path: str | None = None,
     ) -> None:
         self.tts = tts
         self.music = music
@@ -54,6 +90,7 @@ class DefaultAudioModule(AudioModule):
         self.cache = cache
         self.config = config or AudioConfig()
         self.voice = voice
+        self.ffmpeg_path = ffmpeg_path or (config.ffmpeg_path if config else None) or "ffmpeg"
 
     def validate_input(self, ctx: JobContext) -> None:
         result = ctx.results.get(Stage.SCENES)
@@ -84,8 +121,13 @@ class DefaultAudioModule(AudioModule):
         mix_plan_artifact = self._save(ctx, "mix_plan.json", mix_plan)
         written.append(mix_plan_artifact)
 
-        # 5. Subtitle generation (from scene timing, independent of the mixer)
-        cues = build_cues(plan)
+        # 5. Subtitle generation — use actual narration durations for timing.
+        narr_durations = {
+            i + 1: t.duration
+            for i, t in enumerate(narration_tracks)
+            if t.duration
+        }
+        cues = build_cues(plan, narr_durations)
         srt_path = ctx.store.resolve(self.name, "subtitles.srt")
         srt_path.write_text(cues_to_srt(cues), encoding="utf-8")
         written.append(Artifact(stage=self.name.value, name=srt_path.name, path=srt_path))
@@ -128,13 +170,16 @@ class DefaultAudioModule(AudioModule):
             suffix = ".mp3" if getattr(self.tts, "name", "stub") == "edge" else ".txt"
             out = ctx.store.resolve(self.name, f"narration_scene_{scene.scene:02d}{suffix}")
             self.tts.synthesize(scene.narration, voice=self.voice, out_path=out)
+            # Measure actual TTS output duration, not the LLM estimate.
+            actual_dur = _measure_audio_duration(out, self.ffmpeg_path)
+            dur = actual_dur if actual_dur > 0 else float(scene.duration)
             tracks.append(
                 AudioTrack(
                     kind="narration",
                     provider=self.tts.name,
                     title=f"narration scene {scene.scene}",
                     local_path=out,
-                    duration=float(scene.duration),
+                    duration=dur,
                 )
             )
             written.append(Artifact(stage=self.name.value, name=out.name, path=out))
@@ -207,7 +252,12 @@ class DefaultAudioModule(AudioModule):
         parts = []
         for track in tracks:
             if track.local_path and track.local_path.exists():
-                parts.append(track.local_path.read_text(encoding="utf-8").strip())
+                try:
+                    parts.append(track.local_path.read_text(encoding="utf-8").strip())
+                except UnicodeDecodeError:
+                    # Real TTS (edge-tts) writes binary audio, not text — keep a
+                    # readable pointer instead of crashing the pipeline.
+                    parts.append(f"[audio narration] {track.local_path.name}")
         combined.write_text("\n\n".join(parts), encoding="utf-8")
         return combined
 

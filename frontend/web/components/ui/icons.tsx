@@ -151,3 +151,11 @@ export const IconLayers = (p: IconProps) => (
     <path d="m3 13 9 5 9-5" />
   </svg>
 );
+
+export const IconAudio = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+  </svg>
+);

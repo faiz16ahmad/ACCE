@@ -27,8 +27,16 @@ def split_sentences(text: str) -> list[str]:
     return [sentence.strip() for sentence in _SENTENCE_SPLIT_RE.split(text) if sentence.strip()]
 
 
-def build_cues(scenes: ScenePlan) -> list[AudioCue]:
-    """Sentence-timed cues from the scene narration, back-to-back."""
+def build_cues(
+    scenes: ScenePlan,
+    narration_durations: dict[int, float] | None = None,
+) -> list[AudioCue]:
+    """Sentence-timed cues from the scene narration, back-to-back.
+
+    *narration_durations* maps scene_number → actual measured duration.
+    When provided, these override the LLM estimates for subtitle timing.
+    """
+    narration_durations = narration_durations or {}
     cues: list[AudioCue] = []
     cursor = 0.0
     cue_no = 0
@@ -38,7 +46,10 @@ def build_cues(scenes: ScenePlan) -> list[AudioCue]:
             continue
         words = [count_words(sentence) for sentence in sentences]
         total_words = sum(words) or 1
-        scene_duration = max(0.0, scene.estimated_duration)
+        scene_duration = narration_durations.get(
+            scene.scene_number, scene.estimated_duration
+        )
+        scene_duration = max(0.0, scene_duration)
         for sentence, word_count in zip(sentences, words, strict=True):
             cue_no += 1
             end = cursor + scene_duration * word_count / total_words

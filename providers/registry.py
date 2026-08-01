@@ -13,6 +13,7 @@ from pathlib import Path
 from .base import LLMProvider, MusicProvider, Provider, ProviderError, TTSProvider
 from .edge_tts import EdgeTTSProvider
 from .gemini import GeminiProvider
+from .openrouter import OpenRouterProvider
 from .local_music import LocalMusicProvider
 from .pexels import PexelsImageProvider, PexelsVideoProvider
 from .pixabay import PixabayImageProvider, PixabayMusicProvider, PixabayVideoProvider
@@ -25,7 +26,7 @@ from .wikimedia import WikimediaImageProvider, WikimediaVideoProvider
 
 log = logging.getLogger(__name__)
 
-_LLMS: dict[str, type[LLMProvider]] = {"stub": StubLLMProvider, "gemini": GeminiProvider}
+_LLMS: dict[str, type[LLMProvider]] = {"stub": StubLLMProvider, "gemini": GeminiProvider, "openrouter": OpenRouterProvider}
 _IMAGES = {
     "stub": StubImageProvider,
     "pexels": PexelsImageProvider,
@@ -84,7 +85,6 @@ _UNIMPLEMENTED = {
     "anthropic": "implement providers/anthropic.py and register it",
     "glm": "implement providers/glm.py and register it",
     "deepseek": "implement providers/deepseek.py and register it",
-    "openrouter": "implement providers/openrouter.py and register it",
 }
 
 

@@ -179,6 +179,25 @@ def test_command_audio_sync(tmp_path):
     assert "-c:a" in cmd and "aac" in cmd
 
 
+def test_command_all_inputs_precede_maps(tmp_path):
+    """Regression: ffmpeg rejects `-map` placed before an `-i` input.
+
+    All `-i` options must come first, or ffmpeg treats the earlier `-map` as
+    an input option for the next input file ("cannot be applied to input url").
+    """
+    audio = tmp_path / "master.mp3"
+    audio.write_bytes(b"x")
+    manifest = _manifest(_scenes("stock_video"), MediaPlan(assets=[]), audio=AudioOutput(mixed_audio_path=audio))
+    cmd = build_command(manifest, tmp_path / "out.mp4")
+
+    first_map = cmd.index("-map")
+    last_input = max(i for i, part in enumerate(cmd) if part == "-i")
+    assert last_input < first_map
+    # The first -map references the filter output, the second the audio stream.
+    assert cmd[first_map + 1].startswith("[")
+    assert "1:a" in cmd
+
+
 def test_command_full_argv(tmp_path):
     img = tmp_path / "a.jpg"
     img.write_bytes(b"x")
@@ -241,7 +260,7 @@ def test_stub_renderer_writes_marker(tmp_path):
 def test_ffmpeg_renderer_binary_missing(tmp_path):
     renderer = FFmpegRenderer(str(tmp_path / "no_such_ffmpeg"))
     with pytest.raises(RendererError):
-        renderer._run(["definitely-not-a-real-binary"])
+        renderer._run(["definitely-not-a-real-binary"], tmp_path)
 
 
 class ExplodingRenderer:

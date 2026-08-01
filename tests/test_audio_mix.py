@@ -46,7 +46,7 @@ def test_build_mix_command_places_and_levels_segments(tmp_path):
     joined = " ".join(cmd)
     assert "adelay=0|0" in joined
     assert "volume=1.0000" in joined and "volume=0.2000" in joined
-    assert "afade=t=in:st=0:d=0.200" in joined
+    assert "afade=t=in:st=0.000:d=0.200" in joined
     assert "afade=t=out:st=4.800:d=0.200" in joined
     assert "amix=inputs=2:duration=longest:normalize=0" in joined
     assert "loudnorm=I=-16:TP=-1.5:LRA=11" in joined
@@ -70,6 +70,37 @@ def test_skips_missing_segment_files(tmp_path):
     cmd = build_mix_command(plan, tmp_path / "master.m4a")
     # Only the music segment is mixed, so it's a single-input amix.
     assert "amix=inputs=1:duration=longest:normalize=0" in " ".join(cmd)
+
+
+def test_missing_music_source_does_not_shift_narration_inputs(tmp_path):
+    """Regression: a skipped segment must not shift ffmpeg input indices.
+
+    When the music bed's source file is missing (e.g. an empty local music
+    dir), the narration segments used to be labeled [1:a]..[N:a] with no
+    [0:a], which ffmpeg rejects with 'Invalid file index'.
+    """
+    missing_bed = tmp_path / "bed.mp3"  # deliberately not created
+    narr1 = tmp_path / "narr1.mp3"
+    narr1.write_bytes(b"x")
+    narr2 = tmp_path / "narr2.mp3"
+    narr2.write_bytes(b"x")
+    plan = AudioMixPlan(
+        segments=[
+            MixSegment(kind="music", source_path=missing_bed, start=0.0, end=5.0, volume=0.2),
+            MixSegment(kind="narration", source_path=narr1, start=0.0, end=3.0, volume=1.0),
+            MixSegment(kind="narration", source_path=narr2, start=3.0, end=6.0, volume=1.0),
+        ],
+        master_gain=1.0,
+    )
+    cmd = build_mix_command(plan, tmp_path / "master.m4a")
+    joined = " ".join(cmd)
+    # Exactly two real inputs were added; the filtergraph must reference them
+    # as [0:a] and [1:a] — never [1:a]/[2:a] (which would point past the end).
+    assert cmd.count("-i") == 2
+    assert "[0:a]aformat" in joined and "[1:a]aformat" in joined
+    assert "[2:a]aformat" not in joined
+    # Both narration labels still feed the final amix.
+    assert "amix=inputs=2:duration=longest:normalize=0" in joined
 
 
 def test_empty_plan_produces_silence(tmp_path):

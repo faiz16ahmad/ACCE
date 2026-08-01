@@ -60,6 +60,12 @@ def cmd_api(args) -> int:
     return 0
 
 
+def cmd_doctor(_args) -> int:
+    from config.doctor import run_doctor
+
+    return run_doctor()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="acce", description="Autonomous Content Creation Engine — V1")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -80,6 +86,9 @@ def build_parser() -> argparse.ArgumentParser:
     api.add_argument("--port", type=int, default=8000)
     api.add_argument("--reload", action="store_true")
     api.set_defaults(func=cmd_api)
+
+    doc = sub.add_parser("doctor", help="check production readiness (keys, ffmpeg, deps)")
+    doc.set_defaults(func=cmd_doctor)
 
     return parser
 

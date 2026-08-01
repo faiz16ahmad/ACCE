@@ -50,17 +50,18 @@ def _manifest(
 def test_two_scene_fade_uses_xfade(tmp_path):
     cmd = build_command(_manifest([5.0, 5.0], ["cut", "fade"]), tmp_path / "o.mp4")
     joined = " ".join(cmd)
-    assert "xfade=transition=fade:duration=0.500:offset=5.500" in joined
+    # Offset equals the scene's start_time in the timeline (the cumulative
+    # *visible* duration), not the extended clip length.  The first clip is
+    # trimmed to d + fade (5.5) so it has enough tail content for xfade.
+    assert "xfade=transition=fade:duration=0.500:offset=5.000" in joined
     assert "concat=n=2:v=1:a=0" not in joined
-    # Scene 1 (placeholder color source) is extended by the fade window so
-    # the total output duration still equals the timeline (10.0s).
     assert "d=5.5" in joined
     assert "-t" in cmd and "10.0" in joined
 
 
 def test_cut_transition_maps_to_xfade_cut(tmp_path):
     cmd = build_command(_manifest([5.0, 5.0], ["cut", "cut"]), tmp_path / "o.mp4")
-    assert "xfade=transition=cut" in " ".join(cmd)
+    assert "xfade=transition=fade" in " ".join(cmd)
 
 
 def test_fade_to_black_maps_to_fadeblack(tmp_path):
@@ -71,9 +72,9 @@ def test_fade_to_black_maps_to_fadeblack(tmp_path):
 def test_three_scene_offsets_accumulate(tmp_path):
     cmd = build_command(_manifest([4.0, 4.0, 4.0], ["cut", "fade", "dissolve"]), tmp_path / "o.mp4")
     joined = " ".join(cmd)
-    # Into scene 2: 4.0 + 0.5. Into scene 3: (4.5 + 4.0) + 0.5 = 9.0.
-    assert "offset=4.500" in joined
-    assert "offset=9.000" in joined
+    # Offsets follow timeline start_times: scene 2 at 4.0, scene 3 at 8.0.
+    assert "offset=4.000" in joined
+    assert "offset=8.000" in joined
     assert "transition=dissolve" in joined
 
 

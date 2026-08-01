@@ -56,8 +56,13 @@ class DefaultProductionModule(ProductionModule):
 
         written: list[Artifact] = []
 
-        # 1. Timeline (durations from the ScenePlan, never from media length).
-        timeline = build_timeline(scenes, media)
+        # 1. Timeline — use actual narration durations from the audio stage
+        #    when available, falling back to the scene plan's LLM estimates.
+        narr_durations: dict[int, float] = {}
+        for i, track in enumerate(audio.tracks):
+            if track.kind == "narration" and track.duration:
+                narr_durations[i + 1] = track.duration
+        timeline = build_timeline(scenes, media, narr_durations)
         timeline_artifact = self._save(ctx, "timeline.json", timeline)
         written.append(timeline_artifact)
 

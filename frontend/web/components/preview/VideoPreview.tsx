@@ -12,10 +12,9 @@ export function VideoPreview({ artifacts }: { artifacts: ArtifactDto[] }) {
   const [playbackError, setPlaybackError] = useState(false);
 
   const video =
-    artifacts.find(
-      (asset) =>
-        asset.name === "final_video.mp4" || asset.mime.startsWith("video/"),
-    ) ?? null;
+    artifacts.find((asset) => asset.name === "final_video.mp4") ??
+    artifacts.find((asset) => asset.mime.startsWith("video/")) ??
+    null;
 
   const thumbnail =
     artifacts.find((asset) => asset.name === "thumbnail.jpg") ?? null;

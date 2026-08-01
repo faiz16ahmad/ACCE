@@ -22,7 +22,7 @@ from .schemas import RenderManifest
 
 # Scene transition -> xfade transition name (all standard in ffmpeg >= 4.3).
 _XFADE_TRANSITIONS = {
-    "cut": "cut",
+    "cut": "fade",  # "cut" not supported by all ffmpeg builds; use fade as fallback
     "fade": "fade",
     "dissolve": "dissolve",
     "fade_to_black": "fadeblack",
@@ -128,17 +128,21 @@ def build_command(manifest: RenderManifest, out_path: Path, ffmpeg_path: str = "
         concat_inputs.append(sink)
 
     if use_xfade:
-        # Sequential xfade chain. Offset for the transition into scene i is the
-        # cumulative trimmed duration of all preceding clips.
+        # Sequential xfade chain.  The offset for each xfade is the
+        # scene's start_time in the timeline — the cumulative *visible*
+        # duration of all preceding scenes.  Each input clip is trimmed
+        # to (visible_duration + fade) so it has enough tail content for
+        # the crossfade; using the timeline start_time keeps the offset
+        # strictly below the first-input length, which ffmpeg's xfade
+        # filter requires to produce a correct output stream.
         mapped = concat_inputs[0]
-        running = 0.0
         for index in range(1, len(durations)):
-            running += durations[index - 1] + fade
+            offset = manifest.timeline.scenes[index].start_time
             transition = _xfade_transition(manifest.timeline.scenes[index].transition)
             out_label = f"[xf{index}]"
             filter_parts.append(
                 f"{mapped}{concat_inputs[index]}"
-                f"xfade=transition={transition}:duration={fade:.3f}:offset={running:.3f}"
+                f"xfade=transition={transition}:duration={fade:.3f}:offset={offset:.3f}"
                 f"{out_label}"
             )
             mapped = out_label
@@ -152,11 +156,17 @@ def build_command(manifest: RenderManifest, out_path: Path, ffmpeg_path: str = "
         filter_parts.append(f"{mapped}subtitles={_escape_path_filter(str(manifest.subtitle_path))}{sub_label}")
         mapped = sub_label
 
-    cmd += ["-filter_complex", ";".join(filter_parts), "-map", mapped]
+    cmd += ["-filter_complex", ";".join(filter_parts)]
 
+    # All inputs must precede the -map options, or ffmpeg treats the first
+    # -map as an input option for the next -i ("cannot be applied to input url").
     audio_index = len(manifest.timeline.scenes)
     if manifest.audio_path is not None and manifest.audio_path.exists():
-        cmd += ["-i", str(manifest.audio_path), "-map", f"{audio_index}:a", "-c:a", settings.audio_codec]
+        cmd += ["-i", str(manifest.audio_path)]
+
+    cmd += ["-map", mapped]
+    if manifest.audio_path is not None and manifest.audio_path.exists():
+        cmd += ["-map", f"{audio_index}:a", "-c:a", settings.audio_codec]
 
     cmd += ["-t", f"{manifest.timeline.duration:.3f}"]
     cmd += [

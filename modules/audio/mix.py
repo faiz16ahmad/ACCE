@@ -55,6 +55,7 @@ def build_mix_command(
     narration_labels: list[str] = []
     music_labels: list[str] = []
 
+    input_index = 0
     for index, segment in enumerate(plan.segments):
         source = segment.source_path
         if source is None or not Path(source).exists():
@@ -66,11 +67,21 @@ def build_mix_command(
         chain.append(f"volume={segment.volume:.4f}")
         duration = max(0.0, segment.end - segment.start)
         if segment.fade_in and segment.fade_in > 0:
-            chain.append(f"afade=t=in:st=0:d={segment.fade_in:.3f}")
+            # afade operates on absolute PTS, which includes the adelay offset.
+            # Fade in starts when the audio content begins (= segment.start).
+            chain.append(f"afade=t=in:st={segment.start:.3f}:d={segment.fade_in:.3f}")
         if segment.fade_out and segment.fade_out > 0 and segment.fade_out < duration:
-            chain.append(f"afade=t=out:st={max(0.0, duration - segment.fade_out):.3f}:d={segment.fade_out:.3f}")
+            # Fade out must use absolute PTS (segment.end), not relative duration.
+            # Using relative duration caused the fade to fire at the wrong time —
+            # for delayed segments it fired before the audio even started,
+            # silencing the entire segment.
+            chain.append(f"afade=t=out:st={max(0.0, segment.end - segment.fade_out):.3f}:d={segment.fade_out:.3f}")
         label = f"[seg{index}]"
-        filter_parts.append(f"[{index}:a]{','.join(chain)}{label}")
+        # ffmpeg numbers inputs by the actual `-i` count, so track a separate
+        # counter that only advances when an input is added (segments whose
+        # source is missing are skipped and must not shift the indices).
+        filter_parts.append(f"[{input_index}:a]{','.join(chain)}{label}")
+        input_index += 1
         (music_labels if segment.kind == "music" else narration_labels).append(label)
 
     if not filter_parts:

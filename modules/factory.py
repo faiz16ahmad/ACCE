@@ -67,6 +67,7 @@ def build_orchestrator(
             cache=cache,
             config=settings.audio,
             voice=settings.tts.voice,
+            ffmpeg_path=settings.production.ffmpeg_path,
         ),
         Stage.PRODUCTION: DefaultProductionModule(settings.production),
         Stage.QUALITY: DefaultQualityModule(config=settings.quality),

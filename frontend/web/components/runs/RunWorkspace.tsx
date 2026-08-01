@@ -15,6 +15,7 @@ import { StatusPill } from "@/components/jobs/StatusPill";
 import { StagePipeline } from "@/components/jobs/StagePipeline";
 import { LogViewer } from "@/components/logs/LogViewer";
 import { VideoPreview } from "@/components/preview/VideoPreview";
+import { AudioPreview } from "@/components/preview/AudioPreview";
 import { ArtifactExplorer } from "@/components/artifacts/ArtifactExplorer";
 import { QualityPanel } from "@/components/quality/QualityPanel";
 import { formatClock } from "@/lib/format";
@@ -163,7 +164,10 @@ export function RunWorkspace({ jobId }: { jobId: string }) {
         )}
         {tab === "preview" &&
           (succeeded ? (
-            <VideoPreview artifacts={artifacts} />
+            <div className="flex flex-col gap-8">
+              <VideoPreview artifacts={artifacts} />
+              <AudioPreview artifacts={artifacts} />
+            </div>
           ) : (
             <PendingPanel label="Your video preview" />
           ))}
