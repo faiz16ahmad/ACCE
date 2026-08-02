@@ -10,13 +10,16 @@ per-issue human-readable fix suggestions, and historical quality metrics in
 
 from __future__ import annotations
 
+import json
 import logging
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
-from config.settings import QualityConfig
+from config.settings import QualityConfig, TimelineConfig
 from core.models import JobContext, StageResult
 from core.stages import Stage
+from modules.shots.template import scene_id_for
 
 from .interface import QualityModule
 from .schemas import QualityIssue, QualityReport
@@ -28,14 +31,16 @@ _CANONICAL_ARTIFACTS = {
     "research": "research.json",
     "script": "script.json",
     "scenes": "scene_plan.json",
+    "shots": "shot_plan.json",
     "media": "media_plan.json",
     "audio": "audio.json",
 }
 
 
 class DefaultQualityModule(QualityModule):
-    def __init__(self, config: QualityConfig | None = None) -> None:
+    def __init__(self, config: QualityConfig | None = None, timeline_config: TimelineConfig | None = None) -> None:
         self.config = config or QualityConfig()
+        self.timeline_config = timeline_config or TimelineConfig()
 
     def run(self, ctx: JobContext) -> StageResult:
         issues: list[QualityIssue] = []
@@ -45,6 +50,8 @@ class DefaultQualityModule(QualityModule):
         self._check_script(ctx, issues)
         ctx.progress("Checking scenes...")
         self._check_scenes(ctx, issues)
+        ctx.progress("Checking shots...")
+        self._check_shots(ctx, issues)
         ctx.progress("Checking media...")
         self._check_media(ctx, issues)
         ctx.progress("Checking audio...")
@@ -248,26 +255,8 @@ class DefaultQualityModule(QualityModule):
                 "scenes.invalid_duration",
                 "Regenerate the Scene Planner.",
             )
-        missing_visual = [scene.scene for scene in out.scenes if not scene.visual_description]
-        if missing_visual:
-            self._issue(
-                issues,
-                "warning",
-                "scenes",
-                f"missing visual descriptions: {missing_visual}",
-                "scenes.missing_visual",
-                "Regenerate the Scene Planner with visual descriptions.",
-            )
-        missing_keywords = [scene.scene for scene in out.scenes if not scene.search_keywords]
-        if missing_keywords:
-            self._issue(
-                issues,
-                "warning",
-                "scenes",
-                f"missing search keywords: {missing_keywords}",
-                "scenes.missing_keywords",
-                "Regenerate the Scene Planner with keywords.",
-            )
+        # Visual coverage is a Shot-level concern in architecture v2 (Phase 3);
+        # scenes are narrative-only.
         numbers = sorted(scene.scene for scene in out.scenes)
         if numbers != list(range(1, len(numbers) + 1)):
             self._issue(
@@ -277,6 +266,73 @@ class DefaultQualityModule(QualityModule):
                 "scene numbers not contiguous (timeline continuity)",
                 "scenes.timeline_continuity",
                 "Regenerate the Scene Planner.",
+            )
+
+    def _check_shots(self, ctx: JobContext, issues: list[QualityIssue]) -> None:
+        out = self._output(ctx, Stage.SHOTS)
+        if out is None:
+            self._issue(
+                issues,
+                "error",
+                "shots",
+                "missing shot plan",
+                "shots.missing_output",
+                "Retry the Shot Planner.",
+            )
+            return
+        if not out.shots:
+            self._issue(
+                issues,
+                "error",
+                "shots",
+                "empty shot plan",
+                "shots.empty",
+                "Regenerate the Shot Planner.",
+            )
+            return
+        scenes = self._output(ctx, Stage.SCENES)
+        known_ids = {scene_id_for(s.scene_number) for s in scenes.scenes} if scenes is not None else set()
+        orphan = sorted({s.shot_id for s in out.shots if s.scene_id not in known_ids})
+        if orphan:
+            self._issue(
+                issues,
+                "warning",
+                "shots",
+                f"shots with unknown scenes: {orphan}",
+                "shots.orphan_scene",
+                "Regenerate the Shot Planner.",
+            )
+        counts = Counter(s.scene_id for s in out.shots)
+        for scene_id, count in sorted(counts.items()):
+            if count < self.timeline_config.min_shots or count > self.timeline_config.max_shots:
+                self._issue(
+                    issues,
+                    "warning",
+                    "shots",
+                    f"scene {scene_id} has {count} shot(s), "
+                    f"outside [{self.timeline_config.min_shots}, {self.timeline_config.max_shots}]",
+                    "shots.count_bounds",
+                    "Regenerate the Shot Planner or adjust TimelineConfig.",
+                )
+        empty_queries = [s.shot_id for s in out.shots if not s.search_queries]
+        if empty_queries:
+            self._issue(
+                issues,
+                "warning",
+                "shots",
+                f"shots with empty search queries: {empty_queries}",
+                "shots.empty_queries",
+                "Regenerate the Shot Planner with keywords.",
+            )
+        missing_visual = [s.shot_id for s in out.shots if not s.visual_description]
+        if missing_visual:
+            self._issue(
+                issues,
+                "warning",
+                "shots",
+                f"shots missing visual description: {missing_visual}",
+                "shots.missing_visual",
+                "Regenerate the Shot Planner.",
             )
 
     def _check_media(self, ctx: JobContext, issues: list[QualityIssue]) -> None:
@@ -342,6 +398,21 @@ class DefaultQualityModule(QualityModule):
                 "media.duplicate_asset",
                 "Choose distinct assets per scene.",
             )
+        # Every shot should have a media asset of its own (shot-keyed coverage).
+        shots = self._output(ctx, Stage.SHOTS)
+        if shots is not None and shots.shots:
+            shot_ids = {s.shot_id for s in shots.shots}
+            covered = {asset.shot_id for asset in out.assets if asset.shot_id}
+            uncovered = sorted(shot_ids - covered)
+            if uncovered:
+                self._issue(
+                    issues,
+                    "warning",
+                    "media",
+                    f"shots without media assets: {uncovered}",
+                    "media.shot_coverage",
+                    "Run the Media stage with a real provider.",
+                )
 
     def _check_audio(self, ctx: JobContext, issues: list[QualityIssue]) -> None:
         out = self._output(ctx, Stage.AUDIO)
@@ -403,17 +474,52 @@ class DefaultQualityModule(QualityModule):
             if not self._path(getattr(out, attr)):
                 self._issue(issues, "error", "production", f"missing {label}", code, "Retry the Production stage.")
 
+        # Clip-level checks from the timeline artifact (analysis only — quality
+        # never modifies artifacts).
+        if ctx.store is not None and ctx.store.exists(Stage.PRODUCTION, "timeline.json"):
+            try:
+                data = json.loads(Path(ctx.store.resolve(Stage.PRODUCTION, "timeline.json")).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                data = {}
+            clips = data.get("clips") or []
+            if not clips:
+                self._issue(
+                    issues,
+                    "warning",
+                    "production",
+                    "timeline has no clips",
+                    "production.no_clips",
+                    "Retry the Production stage.",
+                )
+            else:
+                short = [
+                    clip.get("shot_id")
+                    for clip in clips
+                    if (clip.get("end", 0.0) - clip.get("start", 0.0)) < self.timeline_config.min_shot_duration
+                ]
+                if short:
+                    self._issue(
+                        issues,
+                        "warning",
+                        "production",
+                        f"clips below min duration: {short}",
+                        "production.short_clips",
+                        "Adjust TimelineConfig or Regenerate the Shot Planner.",
+                    )
+
     def _check_overall(self, ctx: JobContext, issues: list[QualityIssue]) -> None:
         production = self._output(ctx, Stage.PRODUCTION)
-        scene_total = self._scene_total(ctx)
-        if production is not None and scene_total and production.duration:
-            ratio = abs(production.duration - scene_total) / scene_total
+        audio = self._output(ctx, Stage.AUDIO)
+        # The measured narration is the clock (I7); fall back to the scene plan.
+        reference = audio.duration if audio is not None and audio.duration else self._scene_total(ctx)
+        if production is not None and reference and production.duration:
+            ratio = abs(production.duration - reference) / reference
             if ratio > self.config.duration_tolerance:
                 self._issue(
                     issues,
                     "warning",
                     "overall",
-                    f"final duration inconsistency ({production.duration:.1f}s vs scenes {scene_total:.1f}s)",
+                    f"final duration inconsistency ({production.duration:.1f}s vs clock {reference:.1f}s)",
                     "overall.duration_consistency",
                     "Regenerate the affected stage to align durations.",
                 )

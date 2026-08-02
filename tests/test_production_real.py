@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from config.settings import ProductionConfig
+from config.settings import ProductionConfig, TimelineConfig
 from core.stages import Stage
 from modules.audio.schemas import AudioOutput
 from modules.media.schemas import MediaAssetPlan, MediaPlan
@@ -23,6 +23,7 @@ from modules.production.renderer import FFmpegRenderer, RendererError, StubRende
 from modules.production.schemas import RenderResult
 from modules.production.timeline import build_timeline
 from modules.scenes.schemas import Scene, ScenePlan
+from modules.shots.schemas import Shot, ShotPlan
 from modules.shots.template import plan_shots
 
 
@@ -115,6 +116,31 @@ def test_timeline_shot_plan_uses_measured_narration_durations():
     assert timeline.duration == 20.0
     assert timeline.clips[0].end == 8.0
     assert timeline.clips[1].start == 8.0 and timeline.clips[1].end == 20.0
+
+
+def test_timeline_allocation_honors_min_shot_duration():
+    # Scene rhythm "high" -> "build" shaping collapses the first shot's weight
+    # (~1.15s raw). The old global renormalize scaled it below min_shot_duration;
+    # the pin-and-redistribute fix keeps it at the floor while preserving I7.
+    scenes = ScenePlan(
+        scenes=[Scene(scene=1, narration="One two three four five six seven eight nine ten.", rhythm="high")]
+    )
+    shot_plan = ShotPlan(
+        shots=[
+            Shot(shot_id="shot_0001", scene_id="scene_0001", position=1, importance="high"),
+            Shot(shot_id="shot_0002", scene_id="scene_0001", position=2, importance="medium"),
+            Shot(shot_id="shot_0003", scene_id="scene_0001", position=3, importance="high"),
+        ]
+    )
+    config = TimelineConfig(min_shot_duration=1.5)
+    timeline = build_timeline(
+        scenes, MediaPlan(assets=[]), narration_durations={1: 6.456}, shot_plan=shot_plan, config=config
+    )
+
+    assert len(timeline.clips) == 3
+    assert all(clip.end - clip.start >= config.min_shot_duration for clip in timeline.clips)
+    # I7: the per-scene clip sum still equals the measured narration budget.
+    assert abs(sum(clip.end - clip.start for clip in timeline.clips) - 6.456) < 0.01
 
 
 # -- render manifest ----------------------------------------------------------

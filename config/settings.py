@@ -103,6 +103,33 @@ class PipelineConfig(BaseModel):
     retries: int = 2
 
 
+class TimelineConfig(BaseModel):
+    """Edit-layer pacing rules (architecture v2, Phase 3).
+
+    The Shot Planner (LLM or template) *proposes* shots; these rules are
+    enforced by the normalizer and the Timeline Sync allocation — never by the
+    LLM prompt, so the limits stay deterministic and configurable.
+    """
+
+    min_shots: int = 1  # shots per scene (lower bound)
+    max_shots: int = 6  # shots per scene (upper bound; the LLM is asked for 2-5)
+    min_shot_duration: float = 1.5  # seconds per clip
+    max_shot_duration: float = 12.0  # seconds per clip
+    # Importance -> relative duration weight (Timeline Sync allocation).
+    importance_weights: dict[str, float] = Field(
+        default_factory=lambda: {"low": 0.8, "medium": 1.0, "high": 1.25, "critical": 1.5}
+    )
+    # Rhythm -> per-position shaping of the allocation (see timeline.py).
+    rhythm_multipliers: dict[str, str] = Field(
+        default_factory=lambda: {
+            "low": "calm",      # first shot longest, then decays
+            "medium": "flat",   # importance weights only
+            "high": "build",    # gets busier toward the last shot
+            "intense": "rapid", # near-even cuts
+        }
+    )
+
+
 class QualityConfig(BaseModel):
     # Deterministic score penalties subtracted from a perfect 100 per issue level.
     penalty_error: float = 25.0
@@ -135,5 +162,6 @@ class Settings(BaseSettings):
     production: ProductionConfig = ProductionConfig()
     research: ResearchConfig = ResearchConfig()
     script: ScriptConfig = ScriptConfig()
+    timeline: TimelineConfig = TimelineConfig()
     pipeline: PipelineConfig = PipelineConfig()
     quality: QualityConfig = QualityConfig()

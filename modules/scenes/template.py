@@ -14,7 +14,7 @@ import re
 
 from ..script.metrics import count_words
 from ..script.schemas import NarrationBlock, ScriptOutput
-from .schemas import Scene, ScenePlan
+from .schemas import Rhythm, Scene, ScenePlan
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +79,15 @@ def transition_for(index: int, is_last: bool) -> str:
     return _TRANSITIONS[index % len(_TRANSITIONS)]
 
 
+def _rhythm_for(index: int, count: int) -> Rhythm:
+    """Deterministic rhythm hint: punchy hook and ending, steady body."""
+    if count <= 1:
+        return "medium"
+    if index == 0 or index == count - 1:
+        return "high"
+    return "medium"
+
+
 def visual_description_for(topic: str, segment: str, style: str) -> str:
     excerpt = " ".join(segment.split())[:160]
     return f"{style} visual of {topic}: {excerpt}".strip()
@@ -117,16 +126,13 @@ def plan_scenes(
     plan: list[Scene] = []
     for index, (block, dur) in enumerate(zip(scenes, durations, strict=True)):
         segment = block.paragraph
-        is_last = index == len(scenes) - 1
         plan.append(
             Scene(
                 scene_number=index + 1,
                 narration_segment=segment,
                 estimated_duration=max(1.0, dur),
-                visual_description=visual_description_for(topic, segment, style),
-                search_keywords=keywords_for(segment, topic),
-                visual_type=visual_type_for(segment, index, is_last, style),
-                transition=transition_for(index, is_last),
+                rhythm=_rhythm_for(index, count),
+                metadata={"style": style, "topic": topic},
             )
         )
     return ScenePlan(scenes=plan)

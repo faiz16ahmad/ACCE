@@ -1,11 +1,10 @@
-"""Scene planner stage contracts.
+"""Scene planning contracts (architecture v2, Phase 3).
 
-A scene is one timed narration segment plus its visual plan. Field names
-match the master prompt (`scene_number`, `narration_segment`,
-`estimated_duration`, `visual_type`, `transition`); the older names
-`scene` / `narration` / `duration` remain available as read-only aliases so
-downstream modules (audio, media, quality) keep working unchanged. This stage
-only *plans* visuals — it never retrieves media or renders.
+Scenes own the *narrative*: the narration text, its estimated duration (a
+planning aid only — the measured narration is the clock), and a rhythm hint.
+Visual planning moved to the ShotPlan in Phase 2. The V1 visual fields below
+are kept as **deprecated aliases** so legacy `scene_plan.json` files still
+parse during migration; new consumers must read the ShotPlan instead.
 """
 
 from __future__ import annotations
@@ -14,22 +13,24 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-VisualType = Literal[
-    "stock_video", "stock_image", "animation", "infographic", "map", "text_overlay"
-]
+Rhythm = Literal["low", "medium", "high", "intense"]
 
 
 class Scene(BaseModel):
-    """One timed scene with a visual plan."""
-
     model_config = ConfigDict(populate_by_name=True)
 
     scene_number: int = Field(alias="scene")
     narration_segment: str = Field(default="", alias="narration")
     estimated_duration: float = Field(default=0.0, alias="duration")
+    rhythm: Rhythm = "medium"
+    metadata: dict = Field(default_factory=dict)
+
+    # --- Deprecated V1 visual fields (Phase 3: narrative-only) ---
+    # Kept so old scene_plan.json files validate and lazy readers survive;
+    # the ShotPlan is the single source of visual intent.
     visual_description: str = ""
     search_keywords: list[str] = Field(default_factory=list)
-    visual_type: VisualType = "stock_video"
+    visual_type: str = "stock_video"
     transition: str = "cut"
 
     @property

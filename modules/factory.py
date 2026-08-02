@@ -59,8 +59,8 @@ def build_orchestrator(
     modules = {
         Stage.RESEARCH: DefaultResearchModule(llm, cache, config=settings.research),
         Stage.SCRIPT: DefaultScriptModule(llm, config=settings.script),
-        Stage.SCENES: DefaultScenesModule(llm),
-        Stage.SHOTS: DefaultShotsModule(),
+        Stage.SCENES: DefaultScenesModule(),
+        Stage.SHOTS: DefaultShotsModule(llm, config=settings.timeline),
         Stage.MEDIA: DefaultMediaModule(media, cache, config=settings.media),
         Stage.AUDIO: DefaultAudioModule(
             tts=get_provider("tts", settings.tts.provider),
@@ -71,8 +71,8 @@ def build_orchestrator(
             voice=settings.tts.voice,
             ffmpeg_path=settings.production.ffmpeg_path,
         ),
-        Stage.PRODUCTION: DefaultProductionModule(settings.production),
-        Stage.QUALITY: DefaultQualityModule(config=settings.quality),
+        Stage.PRODUCTION: DefaultProductionModule(settings.production, timeline_config=settings.timeline),
+        Stage.QUALITY: DefaultQualityModule(config=settings.quality, timeline_config=settings.timeline),
     }
     return PipelineOrchestrator(
         modules,

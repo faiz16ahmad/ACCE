@@ -21,6 +21,7 @@ from modules.quality.schemas import QualityIssue, QualityReport
 from modules.research.schemas import ResearchFact, ResearchOutput, ResearchSource
 from modules.scenes.schemas import Scene, ScenePlan
 from modules.script.schemas import NarrationBlock, ReadabilityStats, ScriptMetrics, ScriptOutput
+from modules.shots.schemas import Shot, ShotPlan
 
 
 @pytest.fixture
@@ -65,12 +66,30 @@ def clean_ctx(tmp_path):
         assets=[
             MediaAssetPlan(
                 scene_number=1,
+                shot_id="shot_0001",
                 asset_id="asset_0001",
                 selected_provider="p",
                 asset_type="image",
                 asset_url="https://u",
                 local_path=img,
                 license="royalty-free",
+            )
+        ]
+    )
+    shots = ShotPlan(
+        shots=[
+            Shot(
+                shot_id="shot_0001",
+                scene_id="scene_0001",
+                position=1,
+                purpose="main",
+                visual_description="v",
+                search_queries=["neural", "network"],
+                content_kind="stock_image",
+                media_preference="image",
+                motion_intent="none",
+                importance="medium",
+                transition_out="cut",
             )
         ]
     )
@@ -100,6 +119,7 @@ def clean_ctx(tmp_path):
         (Stage.RESEARCH, research),
         (Stage.SCRIPT, script),
         (Stage.SCENES, scenes),
+        (Stage.SHOTS, shots),
         (Stage.MEDIA, media),
         (Stage.AUDIO, audio),
         (Stage.PRODUCTION, production),
@@ -110,6 +130,7 @@ def clean_ctx(tmp_path):
         ("research", "research.json"),
         ("script", "script.json"),
         ("scenes", "scene_plan.json"),
+        ("shots", "shot_plan.json"),
         ("media", "media_plan.json"),
         ("audio", "audio.json"),
     ]:

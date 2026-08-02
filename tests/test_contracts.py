@@ -42,6 +42,8 @@ def test_scene_contract_shape():
         "scene_number": 1,
         "narration_segment": "n",
         "estimated_duration": 5.0,
+        "rhythm": "medium",
+        "metadata": {},
         "visual_description": "v",
         "search_keywords": ["a", "b"],
         "visual_type": "stock_video",

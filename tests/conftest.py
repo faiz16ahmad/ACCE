@@ -67,8 +67,18 @@ def scenes():
 
     return ScenePlan(
         scenes=[
-            Scene(scene=1, duration=20, narration="n1", search_keywords=["neural", "networks"]),
-            Scene(scene=2, duration=20, narration="n2", search_keywords=["neural"]),
+            Scene(
+                scene=1,
+                duration=20,
+                narration="Neural networks learn by adjusting weights on every pass.",
+                search_keywords=["neural", "networks"],
+            ),
+            Scene(
+                scene=2,
+                duration=20,
+                narration="The network improves its predictions with more training data.",
+                search_keywords=["neural"],
+            ),
         ]
     )
 

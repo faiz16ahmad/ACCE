@@ -1,8 +1,10 @@
 # ACCE — Current Pipeline Reference (pre-Phase-2)
 
-> **Status:** Phase 2 has landed. This document is the **before** snapshot used
-> to guide that migration; the four seams in §6 were migrated to shot-keyed
-> media / `Clip` timelines / manifest v2 + id-lookup + V1 normalizer. See
+> **Status:** Phases 2 and 3 have landed. This document is the **before**
+> snapshot used to guide that migration: the four seams in §6 were migrated to
+> shot-keyed media / `Clip` timelines / manifest v2 + id-lookup + V1
+> normalizer (Phase 2), then scenes went narrative-only with a multi-shot LLM
+> Shot Planner + normalizer and Timeline Sync allocation (Phase 3). See
 > `docs/architecture-v2.md` §11 for the current state. The details below remain
 > historically accurate for the pre-Phase-2 contracts.
 

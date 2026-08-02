@@ -58,9 +58,10 @@ def test_script_module(make_ctx, research):
 
 def test_scenes_module(make_ctx, script):
     ctx = make_ctx(**{Stage.SCRIPT: script})
-    result = _exercise(DefaultScenesModule(StubLLMProvider()), ctx, ScenePlan)
+    result = _exercise(DefaultScenesModule(), ctx, ScenePlan)
     assert result.output.scenes
     assert all(s.duration > 0 for s in result.output.scenes)
+    assert all(s.rhythm in ("low", "medium", "high", "intense") for s in result.output.scenes)
     assert ctx.store.exists(Stage.SCENES, "scene_plan.json")
 
 
@@ -127,6 +128,7 @@ def test_quality_module(make_ctx, research, script, scenes, media, audio):
             Stage.RESEARCH: research,
             Stage.SCRIPT: script,
             Stage.SCENES: scenes,
+            Stage.SHOTS: plan_shots(scenes),
             Stage.MEDIA: media,
             Stage.AUDIO: audio,
         }

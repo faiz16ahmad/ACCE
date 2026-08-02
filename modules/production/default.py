@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from config.settings import ProductionConfig
+from config.settings import ProductionConfig, TimelineConfig
 from core.errors import InputValidationError
 from core.models import Artifact, JobContext, StageResult
 from core.stages import Stage
@@ -36,9 +36,15 @@ log = logging.getLogger(__name__)
 
 
 class DefaultProductionModule(ProductionModule):
-    def __init__(self, config: ProductionConfig | None = None, renderer: Renderer | None = None) -> None:
+    def __init__(
+        self,
+        config: ProductionConfig | None = None,
+        renderer: Renderer | None = None,
+        timeline_config: TimelineConfig | None = None,
+    ) -> None:
         self.config = config or ProductionConfig()
         self.renderer = renderer or build_renderer(self.config)
+        self.timeline_config = timeline_config or TimelineConfig()
 
     def validate_input(self, ctx: JobContext) -> None:
         for stage in (Stage.SCENES, Stage.MEDIA, Stage.AUDIO):
@@ -64,7 +70,7 @@ class DefaultProductionModule(ProductionModule):
             if track.kind == "narration" and track.duration:
                 narr_durations[i + 1] = track.duration
         shot_plan = ctx.results[Stage.SHOTS].output if ctx.results.get(Stage.SHOTS) else None
-        timeline = build_timeline(scenes, media, narr_durations, shot_plan)
+        timeline = build_timeline(scenes, media, narr_durations, shot_plan, self.timeline_config)
         ctx.progress(f"Timeline: {timeline.duration:.1f}s, {len(timeline.clips)} clip(s)")
         timeline_artifact = self._save(ctx, "timeline.json", timeline)
         written.append(timeline_artifact)
@@ -78,7 +84,7 @@ class DefaultProductionModule(ProductionModule):
         ass_path = ctx.store.save_text(self.name, "subtitles.ass", build_ass(cues)).path
 
         # 3. Render manifest — the renderer's complete input.
-        manifest = build_manifest(timeline, scenes, media, audio, self.config, ass_path)
+        manifest = build_manifest(timeline, scenes, media, audio, self.config, ass_path, shot_plan)
         manifest_artifact = self._save(ctx, "render_manifest.json", manifest)
         written.append(manifest_artifact)
 
