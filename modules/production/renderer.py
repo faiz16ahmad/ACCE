@@ -39,12 +39,12 @@ class StubRenderer(Renderer):
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(
-            f"[stub-renderer] {len(manifest.timeline.scenes)} scene(s) -> {out_path.name}",
+            f"[stub-renderer] {len(manifest.timeline.clips)} clip(s) -> {out_path.name}",
             encoding="utf-8",
         )
         log_text = (
             f"stub render of {out_path.name} "
-            f"({len(manifest.timeline.scenes)} scenes, {manifest.timeline.duration:.1f}s)"
+            f"({len(manifest.timeline.clips)} clips, {manifest.timeline.duration:.1f}s)"
         )
         return RenderResult(video_path=out_path, log=log_text)
 

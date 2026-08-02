@@ -63,8 +63,9 @@ class DefaultProductionModule(ProductionModule):
         for i, track in enumerate(audio.tracks):
             if track.kind == "narration" and track.duration:
                 narr_durations[i + 1] = track.duration
-        timeline = build_timeline(scenes, media, narr_durations)
-        ctx.progress(f"Timeline: {timeline.duration:.1f}s, {len(timeline.scenes)} scenes")
+        shot_plan = ctx.results[Stage.SHOTS].output if ctx.results.get(Stage.SHOTS) else None
+        timeline = build_timeline(scenes, media, narr_durations, shot_plan)
+        ctx.progress(f"Timeline: {timeline.duration:.1f}s, {len(timeline.clips)} clip(s)")
         timeline_artifact = self._save(ctx, "timeline.json", timeline)
         written.append(timeline_artifact)
 
@@ -136,7 +137,8 @@ class DefaultProductionModule(ProductionModule):
             description=description,
             metadata={
                 "renderer": self.renderer.name,
-                "scenes": len(timeline.scenes),
+                "scenes": len(scenes.scenes),
+                "clips": len(timeline.clips),
                 "fps": self.config.fps,
                 "thumbnail": thumbnail_path.name if thumbnail_path is not None else None,
             },

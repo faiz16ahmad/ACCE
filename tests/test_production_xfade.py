@@ -5,13 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from modules.production.ffmpeg import build_command
-from modules.production.schemas import (
-    ManifestAsset,
-    RenderManifest,
-    RenderSettings,
-    Timeline,
-    TimelineScene,
-)
+from modules.production.normalize import normalize_manifest
+from modules.production.schemas import Clip, ManifestAsset, RenderManifest, RenderSettings, Timeline
 
 
 def _manifest(
@@ -22,29 +17,66 @@ def _manifest(
     subtitle: Path | None = None,
 ) -> RenderManifest:
     start = 0.0
-    scenes = []
+    clips = []
     for index, (duration, transition) in enumerate(zip(durations, transitions, strict=True)):
-        scenes.append(
-            TimelineScene(
-                scene_number=index + 1,
+        clips.append(
+            Clip(
+                shot_id=f"shot_{index + 1:04d}",
+                scene_id=f"scene_{index + 1:04d}",
                 asset_id=f"a{index + 1}",
-                start_time=start,
-                end_time=start + duration,
-                transition=transition,
+                start=start,
+                end=start + duration,
+                transition_out=transition,
             )
         )
         start += duration
     assets = [
-        ManifestAsset(scene_number=i + 1, asset_id=f"a{i + 1}", asset_type="placeholder", text=f"t{i + 1}")
+        ManifestAsset(
+            shot_id=f"shot_{i + 1:04d}",
+            scene_number=i + 1,
+            asset_id=f"a{i + 1}",
+            asset_type="placeholder",
+            text=f"t{i + 1}",
+        )
         for i in range(len(durations))
     ]
     manifest = RenderManifest(
-        timeline=Timeline(scenes=scenes, duration=sum(durations)),
+        timeline=Timeline(clips=clips, duration=sum(durations)),
         assets=assets,
         settings=RenderSettings(fade=fade),
         subtitle_path=subtitle,
     )
     return manifest
+
+
+def _v1_manifest_dict(durations: list[float], transitions: list[str]) -> dict:
+    """A v1 (scene-keyed) manifest as it would exist on disk before migration."""
+    start = 0.0
+    scenes = []
+    for index, (duration, transition) in enumerate(zip(durations, transitions, strict=True)):
+        scenes.append(
+            {
+                "scene_number": index + 1,
+                "asset_id": f"a{index + 1}",
+                "start_time": start,
+                "end_time": start + duration,
+                "transition": transition,
+            }
+        )
+        start += duration
+    return {
+        "version": 1,
+        "timeline": {"scenes": scenes, "duration": sum(durations)},
+        "assets": [
+            {
+                "scene_number": i + 1,
+                "asset_id": f"a{i + 1}",
+                "asset_type": "placeholder",
+                "text": f"t{i + 1}",
+            }
+            for i in range(len(durations))
+        ],
+    }
 
 
 def test_two_scene_fade_uses_xfade(tmp_path):
@@ -108,3 +140,32 @@ def test_subtitle_still_burned_after_xfade(tmp_path):
     joined = " ".join(cmd)
     assert "xfade=" in joined
     assert "subtitles=" in joined
+
+
+# -- V1 manifest normalizer (old saved jobs still render) ----------------------
+
+
+def test_normalize_manifest_converts_v1_dict_to_v2_clips():
+    v2 = normalize_manifest(_v1_manifest_dict([5.0, 4.0], ["cut", "fade"]))
+    assert v2.version == 2
+    assert [c.shot_id for c in v2.timeline.clips] == ["shot_0001", "shot_0002"]
+    assert [c.scene_id for c in v2.timeline.clips] == ["scene_0001", "scene_0002"]
+    assert v2.timeline.clips[0].start == 0.0 and v2.timeline.clips[0].end == 5.0
+    assert v2.timeline.clips[1].start == 5.0 and v2.timeline.clips[1].end == 9.0
+    assert v2.timeline.clips[1].transition_out == "fade"
+    assert v2.assets[1].shot_id == "shot_0002"
+    assert v2.timeline.duration == 9.0
+
+
+def test_normalize_manifest_is_idempotent():
+    v2 = normalize_manifest(_v1_manifest_dict([5.0], ["cut"]))
+    again = normalize_manifest(v2)
+    assert again == v2
+
+
+def test_build_command_accepts_v1_manifest_dict(tmp_path):
+    # A V1 dict goes straight into the renderer entry point and renders.
+    cmd = build_command(_v1_manifest_dict([5.0, 5.0], ["cut", "fade"]), tmp_path / "o.mp4")
+    joined = " ".join(cmd)
+    assert "xfade=transition=fade:duration=0.500:offset=5.000" in joined
+    assert "concat=n=2:v=1:a=0" not in joined

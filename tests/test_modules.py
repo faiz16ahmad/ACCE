@@ -25,6 +25,7 @@ from modules.scenes.schemas import ScenePlan
 from modules.script.default import DefaultScriptModule
 from modules.shots.default import DefaultShotsModule
 from modules.shots.schemas import ShotPlan
+from modules.shots.template import plan_shots
 from modules.script.schemas import ScriptOutput
 from providers.media_chain import build_media_chain
 from providers.music_chain import build_music_chain
@@ -73,13 +74,14 @@ def test_shots_module(make_ctx, scenes):
 
 
 def test_media_module(make_ctx, scenes, tmp_path):
-    ctx = make_ctx(**{Stage.SCENES: scenes})
+    ctx = make_ctx(**{Stage.SCENES: scenes, Stage.SHOTS: plan_shots(scenes)})
     cache = DiskCache(tmp_path / "cache")
     module = DefaultMediaModule(build_media_chain(["stub"], cache), cache)
     result = _exercise(module, ctx, MediaPlan)
     assert result.output.assets
     assert all(a.scene_index >= 1 for a in result.output.assets)
     assert all(a.asset_id.startswith("asset_") for a in result.output.assets)
+    assert all(a.shot_id.startswith("shot_") for a in result.output.assets)
     assert ctx.store.exists(Stage.MEDIA, "media_plan.json")
 
 
@@ -103,6 +105,7 @@ def test_production_module(make_ctx, research, script, scenes, media, audio):
             Stage.RESEARCH: research,
             Stage.SCRIPT: script,
             Stage.SCENES: scenes,
+            Stage.SHOTS: plan_shots(scenes),
             Stage.MEDIA: media,
             Stage.AUDIO: audio,
         }

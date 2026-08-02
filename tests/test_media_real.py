@@ -19,7 +19,8 @@ from core.stages import Stage
 from memory.cache import DiskCache
 from memory.store import ArtifactStore
 from modules.media.default import DefaultMediaModule, refine_query
-from modules.scenes.schemas import Scene
+from modules.scenes.schemas import Scene, ScenePlan
+from modules.shots.template import plan_shots
 from providers.base import ProviderError
 from providers.download import download_asset
 from providers.media_chain import MediaChain
@@ -133,7 +134,7 @@ def test_rank_hits_orders_and_threshold():
 
 
 def test_module_placeholder_when_no_suitable_asset(make_ctx, scenes, tmp_path):
-    ctx = make_ctx(**{Stage.SCENES: scenes})
+    ctx = make_ctx(**{Stage.SCENES: scenes, Stage.SHOTS: plan_shots(scenes)})
     cache = DiskCache(tmp_path / "cache")
     poor = RecordingProvider("poor", hits=[MediaHit(provider="poor", media_type="video", url="u", license="unknown")])
     module = DefaultMediaModule(make_chain(cache, [poor], "video"), cache, config=MediaConfig(download=False))
@@ -143,11 +144,12 @@ def test_module_placeholder_when_no_suitable_asset(make_ctx, scenes, tmp_path):
     assert all(a.selected_provider == "placeholder" for a in result.output.assets)
     assert all(a.license == "placeholder" for a in result.output.assets)
     assert all(a.asset_url == "" and a.candidates == [] for a in result.output.assets)
+    assert all(a.shot_id.startswith("shot_") for a in result.output.assets)
     assert ctx.store.exists(Stage.MEDIA, "media_plan.json")
 
 
 def test_module_persists_ranked_candidates_and_asset_ids(make_ctx, scenes, tmp_path):
-    ctx = make_ctx(**{Stage.SCENES: scenes})
+    ctx = make_ctx(**{Stage.SCENES: scenes, Stage.SHOTS: plan_shots(scenes)})
     cache = DiskCache(tmp_path / "cache")
     hits = [_hit("p", "q", width=1920, height=1080), _hit("p", "q", width=1280, height=720)]
     module = DefaultMediaModule(
@@ -161,12 +163,14 @@ def test_module_persists_ranked_candidates_and_asset_ids(make_ctx, scenes, tmp_p
         assert plan.asset_url == plan.candidates[0].url
         assert plan.asset_type == plan.candidates[0].media_type
         assert plan.asset_id == f"asset_{index:04d}"
+        assert plan.shot_id == f"shot_{index:04d}"
+        assert plan.scene_index == index  # 1:1 pass-through keeps the scene key
         assert plan.local_path is None  # download disabled
-        assert plan.search_query  # query came from the scene keywords
+        assert plan.search_query  # query came from the shot (scene) keywords
 
 
 def test_module_downloads_selected_asset(make_ctx, scenes, tmp_path, file_server):
-    ctx = make_ctx(**{Stage.SCENES: scenes})
+    ctx = make_ctx(**{Stage.SCENES: scenes, Stage.SHOTS: plan_shots(scenes)})
     cache = DiskCache(tmp_path / "cache")
     hit = _hit("p", "q", url=file_server, media_type="video", width=1920, height=1080)
     module = DefaultMediaModule(
@@ -255,6 +259,8 @@ def test_retrieve_download_falls_back_to_next_candidate(tmp_path, monkeypatch):
     chain = make_chain(cache, [RecordingProvider("p", hits=hits)])
     module = DefaultMediaModule(chain, cache=cache, config=MediaConfig(candidates=2))
     scene = Scene(scene=1, narration="n", duration=5.0, visual_type="stock_image", search_keywords=["q"])
+    shot = plan_shots(ScenePlan(scenes=[scene])).shots[0]
+    scene_ctx = {shot.scene_id: (1, scene.duration)}
     ctx = JobContext(
         job_id="job-x", input=UserInput(topic="t"), store=ArtifactStore(tmp_path / "out" / "job-x")
     )
@@ -266,7 +272,7 @@ def test_retrieve_download_falls_back_to_next_candidate(tmp_path, monkeypatch):
         return dest
 
     monkeypatch.setattr("modules.media.default.download_asset", fake_download)
-    asset = module._retrieve(ctx, scene, 1)
+    asset = module._retrieve(ctx, shot, 1, scene_ctx)
 
     assert asset.asset_url == "https://cdn.example/good.jpg"
     assert asset.local_path is not None and asset.local_path.exists()

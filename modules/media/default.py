@@ -1,11 +1,12 @@
-"""Default media retrieval.
+"""Default media retrieval (architecture v2).
 
-Scene -> Search -> Candidate List -> Ranking -> Selection -> Download ->
-MediaPlan. The chain searches, ranks, and selects (stopping at the first
-provider with a satisfactory asset); downloading is a separate post-selection
-step and never influences ranking. When no provider finds a suitable asset, a
-structured placeholder is returned so the pipeline still passes. The module
-never branches on which provider produced a hit.
+Shot -> Search -> Candidate List -> Ranking -> Selection -> Download ->
+MediaPlan. The chain searches, ranks, and selects per **shot** (stopping at
+the first provider with a satisfactory asset); downloading is a separate
+post-selection step and never influences ranking. Media fills the visual slots
+a Shot defines — it never reshapes the edit, and its output never influences
+timing (invariant I6). When no provider finds a suitable asset, a structured
+placeholder is returned so the pipeline still passes.
 """
 
 from __future__ import annotations
@@ -23,19 +24,21 @@ from providers.base import ProviderError
 from providers.download import download_asset
 from providers.media_chain import MediaChain
 
-from ..scenes.schemas import Scene, ScenePlan
+from ..scenes.schemas import ScenePlan
+from ..shots.schemas import Shot, ShotPlan
+from ..shots.template import scene_id_for
 from .interface import MediaModule
 from .schemas import MediaAssetPlan, MediaPlan
 
 log = logging.getLogger(__name__)
 
-_VIDEO_TYPES = {"stock_video", "animation"}
+_VIDEO_KINDS = {"stock_video"}  # content kinds that prefer moving footage
 _MAX_QUERY_CHARS = 200
 _QUOTE_CHARS = {"'", '"'}
 
 
 def refine_query(search_keywords: list[str]) -> str:
-    """Join scene keywords into a provider-friendly query.
+    """Join shot/scene keywords into a provider-friendly query.
 
     Slight refinement only (strip quotes, collapse whitespace, cap length);
     the visual description is never rewritten.
@@ -46,8 +49,19 @@ def refine_query(search_keywords: list[str]) -> str:
     return " ".join(text.split())[:_MAX_QUERY_CHARS]
 
 
-def _media_type_for(visual_type: str) -> str:
-    return "video" if visual_type in _VIDEO_TYPES else "image"
+def _asset_type_for(shot: Shot) -> str:
+    """Resolve the media family a shot wants.
+
+    `content_kind` drives the base family; `media_preference` refines it
+    ("video"/"image" force the family, "either" defers to the content kind).
+    In the Phase 2 1:1 pass-through this reproduces the V1
+    `visual_type` -> media-type mapping exactly.
+    """
+    if shot.media_preference == "video":
+        return "video"
+    if shot.media_preference == "image":
+        return "image"
+    return "video" if shot.content_kind in _VIDEO_KINDS else "image"
 
 
 def _file_extension(url: str) -> str:
@@ -62,20 +76,29 @@ class DefaultMediaModule(MediaModule):
         self.config = config or MediaConfig()
 
     def validate_input(self, ctx: JobContext) -> None:
-        result = ctx.results.get(Stage.SCENES)
+        result = ctx.results.get(Stage.SHOTS)
         if result is None or result.output is None:
-            raise InputValidationError("media requires a scene plan")
+            raise InputValidationError("media requires a shot plan")
 
     def run(self, ctx: JobContext) -> StageResult:
-        plan: ScenePlan = ctx.results[Stage.SCENES].output
-        total = len(plan.scenes)
+        shot_plan: ShotPlan = ctx.results[Stage.SHOTS].output
+        scenes = ctx.results[Stage.SCENES].output if ctx.results.get(Stage.SCENES) else None
+        # Per-scene context (scene number + estimated duration) keyed by the
+        # shot's scene id. Durations are a *search hint* for video providers
+        # only — they never enter the Timeline (I6, I8).
+        scene_ctx = (
+            {scene_id_for(scene.scene_number): (scene.scene_number, scene.estimated_duration) for scene in scenes.scenes}
+            if scenes is not None
+            else {}
+        )
+        total = len(shot_plan.shots)
         assets = []
-        for index, scene in enumerate(plan.scenes, start=1):
-            ctx.progress(f"Searching scene {index}/{total}...")
-            asset = self._retrieve(ctx, scene, index)
+        for index, shot in enumerate(shot_plan.shots, start=1):
+            ctx.progress(f"Searching shot {index}/{total}...")
+            asset = self._retrieve(ctx, shot, index, scene_ctx)
             assets.append(asset)
             status = "downloaded" if asset.local_path else "placeholder"
-            ctx.progress(f"Scene {index}/{total}: {status}")
+            ctx.progress(f"Shot {index}/{total}: {status}")
         output = MediaPlan(assets=assets)
         downloaded = sum(1 for a in assets if a.local_path)
         ctx.progress(f"Complete: {downloaded}/{total} assets downloaded")
@@ -86,18 +109,25 @@ class DefaultMediaModule(MediaModule):
             artifacts_written=[self._save(ctx, "media_plan.json", output)],
         )
 
-    def _retrieve(self, ctx: JobContext, scene: Scene, index: int) -> MediaAssetPlan:
-        query = refine_query(scene.search_keywords)
-        asset_type = _media_type_for(scene.visual_type)
+    def _retrieve(
+        self,
+        ctx: JobContext,
+        shot: Shot,
+        index: int,
+        scene_ctx: dict[str, tuple[int, float | None]],
+    ) -> MediaAssetPlan:
+        query = refine_query(shot.search_queries)
+        asset_type = _asset_type_for(shot)
+        scene_number, target_duration = scene_ctx.get(shot.scene_id, (index, None))
         candidates = self.media.best(
             query,
             media_type=asset_type,
             count=self.config.candidates,
             threshold=self.config.satisfactory_score,
-            target_duration=scene.duration,
+            target_duration=target_duration,
         )
         if not candidates and asset_type == "video":
-            # Video-first scenes fall back to still images when nothing fits.
+            # Video-first shots fall back to still images when nothing fits.
             candidates = self.media.best(
                 query,
                 media_type="image",
@@ -108,9 +138,10 @@ class DefaultMediaModule(MediaModule):
 
         asset_id = f"asset_{index:04d}"
         if not candidates:
-            log.warning("no satisfactory asset for scene %d (%r); using placeholder", index, query)
+            log.warning("no satisfactory asset for shot %d (%r); using placeholder", index, query)
             return MediaAssetPlan(
-                scene_number=index,
+                scene_number=scene_number,
+                shot_id=shot.shot_id,
                 asset_id=asset_id,
                 selected_provider="placeholder",
                 asset_type="image",
@@ -136,11 +167,12 @@ class DefaultMediaModule(MediaModule):
                     break
                 except ProviderError as exc:
                     log.warning(
-                        "download failed for scene %d (%s): %s", index, candidate.provider, exc
+                        "download failed for shot %d (%s): %s", index, candidate.provider, exc
                     )
 
         return MediaAssetPlan(
-            scene_number=index,
+            scene_number=scene_number,
+            shot_id=shot.shot_id,
             asset_id=asset_id,
             selected_provider=selected.provider,
             asset_type=selected.media_type,

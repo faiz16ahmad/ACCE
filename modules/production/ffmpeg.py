@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .normalize import normalize_manifest
 from .schemas import RenderManifest
 
 # Scene transition -> xfade transition name (all standard in ffmpeg >= 4.3).
@@ -58,12 +59,13 @@ def _write_scene_text(text: str, scene_number: int, out_path: Path) -> Path:
     return text_path
 
 
-def build_command(manifest: RenderManifest, out_path: Path, ffmpeg_path: str = "ffmpeg") -> list[str]:
+def build_command(manifest: RenderManifest | dict, out_path: Path, ffmpeg_path: str = "ffmpeg") -> list[str]:
+    manifest = normalize_manifest(manifest)
     settings = manifest.settings
     width, height, fps = settings.width, settings.height, settings.fps
     fade = settings.fade
 
-    durations = [round(scene.end_time - scene.start_time, 3) for scene in manifest.timeline.scenes]
+    durations = [round(clip.end - clip.start, 3) for clip in manifest.timeline.clips]
     use_xfade = (
         len(durations) >= 2
         and fade > 0
@@ -74,7 +76,10 @@ def build_command(manifest: RenderManifest, out_path: Path, ffmpeg_path: str = "
     filter_parts: list[str] = []
     concat_inputs: list[str] = []
 
-    for index, (scene, asset) in enumerate(zip(manifest.timeline.scenes, manifest.assets, strict=True)):
+    # Assets are resolved by asset_id (id-lookup), never by position.
+    assets_by_id = {asset.asset_id: asset for asset in manifest.assets}
+
+    for index, clip in enumerate(manifest.timeline.clips):
         duration = durations[index]
         # Crossfades overlap neighbours by `fade`, so extend every clip but the
         # last by the fade window; total output duration still equals the
@@ -83,8 +88,10 @@ def build_command(manifest: RenderManifest, out_path: Path, ffmpeg_path: str = "
         if use_xfade and index < len(durations) - 1:
             trim_duration = duration + fade
 
-        local_path = asset.local_path
-        if asset.asset_type == "video" and local_path is not None:
+        asset = assets_by_id.get(clip.asset_id)
+        asset_type = asset.asset_type if asset else "placeholder"
+        local_path = asset.local_path if asset else None
+        if asset_type == "video" and local_path is not None:
             cmd += ["-stream_loop", "-1", "-i", str(local_path)]
             chain = [
                 f"trim=0:{trim_duration}",
@@ -109,10 +116,10 @@ def build_command(manifest: RenderManifest, out_path: Path, ffmpeg_path: str = "
             ]
         else:
             # text-overlay or placeholder: a bounded solid-color source
-            color = "#20242e" if asset.asset_type == "text" else "#101418"
+            color = "#20242e" if asset_type == "text" else "#101418"
             cmd += ["-f", "lavfi", "-i", f"color=c={color}:s={width}x{height}:d={trim_duration}"]
             chain = ["setsar=1", f"fps={fps}", "format=yuv420p"]
-            if asset.asset_type == "text" and asset.text:
+            if asset_type == "text" and asset is not None and asset.text:
                 text_path = _write_scene_text(asset.text, asset.scene_number, out_path)
                 chain.append(
                     "drawtext=textfile=" + _escape_path_filter(str(text_path))
@@ -121,7 +128,7 @@ def build_command(manifest: RenderManifest, out_path: Path, ffmpeg_path: str = "
                 )
 
         if not use_xfade:
-            chain += _fade_filters(scene.transition, duration, fade)
+            chain += _fade_filters(clip.transition_out, duration, fade)
         source = f"[{index}:v]"
         sink = f"[v{index}]"
         filter_parts.append(f"{source}{','.join(chain)}{sink}")
@@ -137,8 +144,8 @@ def build_command(manifest: RenderManifest, out_path: Path, ffmpeg_path: str = "
         # filter requires to produce a correct output stream.
         mapped = concat_inputs[0]
         for index in range(1, len(durations)):
-            offset = manifest.timeline.scenes[index].start_time
-            transition = _xfade_transition(manifest.timeline.scenes[index].transition)
+            offset = manifest.timeline.clips[index].start
+            transition = _xfade_transition(manifest.timeline.clips[index].transition_out)
             out_label = f"[xf{index}]"
             filter_parts.append(
                 f"{mapped}{concat_inputs[index]}"
@@ -160,7 +167,7 @@ def build_command(manifest: RenderManifest, out_path: Path, ffmpeg_path: str = "
 
     # All inputs must precede the -map options, or ffmpeg treats the first
     # -map as an input option for the next -i ("cannot be applied to input url").
-    audio_index = len(manifest.timeline.scenes)
+    audio_index = len(manifest.timeline.clips)
     if manifest.audio_path is not None and manifest.audio_path.exists():
         cmd += ["-i", str(manifest.audio_path)]
 

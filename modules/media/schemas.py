@@ -32,6 +32,7 @@ class MediaAssetPlan(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     scene_number: int = Field(alias="scene_index")
+    shot_id: str = ""  # owning shot (architecture v2); "" for legacy/1:1 assets
     asset_id: str
     selected_provider: str
     asset_type: Literal["image", "video"]

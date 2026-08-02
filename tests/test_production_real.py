@@ -23,6 +23,7 @@ from modules.production.renderer import FFmpegRenderer, RendererError, StubRende
 from modules.production.schemas import RenderResult
 from modules.production.timeline import build_timeline
 from modules.scenes.schemas import Scene, ScenePlan
+from modules.shots.template import plan_shots
 
 
 def _scenes(*visual_types: str) -> ScenePlan:
@@ -37,6 +38,19 @@ def _scenes(*visual_types: str) -> ScenePlan:
 def _asset(scene: int, asset_type: str, local_path=None) -> MediaAssetPlan:
     return MediaAssetPlan(
         scene_number=scene,
+        asset_id=f"asset_{scene:04d}",
+        selected_provider="p",
+        asset_type=asset_type,
+        asset_url="https://u",
+        local_path=local_path,
+        license="p",
+    )
+
+
+def _asset_with_shot(scene: int, shot_id: str, asset_type: str, local_path=None) -> MediaAssetPlan:
+    return MediaAssetPlan(
+        scene_number=scene,
+        shot_id=shot_id,
         asset_id=f"asset_{scene:04d}",
         selected_provider="p",
         asset_type=asset_type,
@@ -63,13 +77,44 @@ def test_timeline_build_and_placeholder_asset():
     media = MediaPlan(assets=[_asset(1, "video")])
     timeline = build_timeline(scenes, media)
 
-    assert [s.scene_number for s in timeline.scenes] == [1, 2]
-    assert timeline.scenes[0].asset_id == "asset_0001"
-    assert timeline.scenes[1].asset_id == "placeholder"  # no media for scene 2
-    assert timeline.scenes[0].start_time == 0.0 and timeline.scenes[0].end_time == 10.0
-    assert timeline.scenes[1].start_time == 10.0 and timeline.scenes[1].end_time == 15.0
-    assert timeline.scenes[0].transition == "fade"
+    assert [c.scene_id for c in timeline.clips] == ["scene_0001", "scene_0002"]
+    assert [c.shot_id for c in timeline.clips] == ["shot_0001", "shot_0002"]
+    assert timeline.clips[0].asset_id == "asset_0001"
+    assert timeline.clips[1].asset_id == "placeholder"  # no media for scene 2
+    assert timeline.clips[0].start == 0.0 and timeline.clips[0].end == 10.0
+    assert timeline.clips[1].start == 10.0 and timeline.clips[1].end == 15.0
+    assert timeline.clips[0].transition_out == "fade"
     assert timeline.duration == 15.0
+
+
+def test_timeline_with_shot_plan_resolves_assets_by_shot_id():
+    scenes = _scenes("stock_video")
+    shot_plan = plan_shots(scenes)
+    media = MediaPlan(assets=[_asset_with_shot(1, "shot_0001", "video")])
+    timeline = build_timeline(scenes, media, shot_plan=shot_plan)
+
+    assert len(timeline.clips) == 1
+    assert timeline.clips[0].shot_id == "shot_0001"
+    assert timeline.clips[0].scene_id == "scene_0001"
+    assert timeline.clips[0].asset_id == "asset_0001"
+    assert timeline.clips[0].motion is None
+
+
+def test_timeline_shot_plan_uses_measured_narration_durations():
+    scenes = _scenes("stock_video", "stock_video")
+    shot_plan = plan_shots(scenes)
+    media = MediaPlan(
+        assets=[
+            _asset_with_shot(1, "shot_0001", "video"),
+            _asset_with_shot(2, "shot_0002", "video"),
+        ]
+    )
+    timeline = build_timeline(
+        scenes, media, narration_durations={1: 8.0, 2: 12.0}, shot_plan=shot_plan
+    )
+    assert timeline.duration == 20.0
+    assert timeline.clips[0].end == 8.0
+    assert timeline.clips[1].start == 8.0 and timeline.clips[1].end == 20.0
 
 
 # -- render manifest ----------------------------------------------------------
@@ -82,15 +127,17 @@ def test_render_manifest_build_and_roundtrip(tmp_path):
     media = MediaPlan(assets=[_asset(1, "image", img)])
     manifest = _manifest(scenes, media, config=ProductionConfig(width=1280, height=720))
 
-    assert manifest.version == 1
+    assert manifest.version == 2
     assert manifest.assets[0].asset_type == "image" and manifest.assets[0].local_path == img
     assert manifest.assets[1].asset_type == "text" and manifest.assets[1].text == "scene 2 text."
     assert manifest.settings.width == 1280 and manifest.settings.fps == 30
-    assert manifest.transitions == {1: "cut", 2: "cut"}
+    assert manifest.assets[0].shot_id == "shot_0001"
+    assert manifest.assets[1].shot_id == "shot_0002"
 
     data = json.loads(manifest.model_dump_json())
-    assert data["version"] == 1
+    assert data["version"] == 2
     assert data["assets"][1]["asset_type"] == "text"
+    assert data["timeline"]["clips"][1]["shot_id"] == "shot_0002"
 
 
 def test_render_manifest_placeholder_when_missing_file(tmp_path):
