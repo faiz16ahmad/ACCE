@@ -1,14 +1,38 @@
 "use client";
 
-import { artifactUrl } from "@/lib/api";
-import type { ArtifactDto } from "@/lib/types";
+import { useEffect, useState } from "react";
+
+import { api, artifactUrl, musicUrl } from "@/lib/api";
+import type { ArtifactDto, MusicDto } from "@/lib/types";
 import { formatBytes } from "@/lib/format";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { IconAudio, IconDownload } from "@/components/ui/icons";
 
 const AUDIO_MIMES = /^(audio\/|application\/ogg)/;
 
-export function AudioPreview({ artifacts }: { artifacts: ArtifactDto[] }) {
+export function AudioPreview({
+  jobId,
+  artifacts,
+}: {
+  jobId: string;
+  artifacts: ArtifactDto[];
+}) {
+  const [music, setMusic] = useState<MusicDto | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getMusic(jobId)
+      .then((res) => {
+        if (!cancelled) setMusic(res.music);
+      })
+      .catch(() => {
+        if (!cancelled) setMusic(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId]);
+
   const audioFiles = artifacts.filter((a) => AUDIO_MIMES.test(a.mime));
 
   if (!audioFiles.length) {
@@ -32,6 +56,7 @@ export function AudioPreview({ artifacts }: { artifacts: ArtifactDto[] }) {
 
   return (
     <div className="flex flex-col gap-6">
+      {music && <MusicFeatured music={music} />}
       {master && <FeaturedAudio track={master} label="Master Mix" />}
 
       {narrations.length > 0 && (
@@ -59,6 +84,45 @@ export function AudioPreview({ artifacts }: { artifacts: ArtifactDto[] }) {
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Background music — the bed selected for this job (a library asset) */
+/* ------------------------------------------------------------------ */
+
+function MusicFeatured({ music }: { music: MusicDto }) {
+  const src = musicUrl(music.url);
+  const chips = [
+    music.provider && `source: ${music.provider}`,
+    music.bpm && `${music.bpm} bpm`,
+    music.duration && `${music.duration}s bed`,
+    music.license,
+  ].filter(Boolean) as string[];
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-accent/40 bg-surface-1 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <IconAudio className="h-4 w-4 text-accent" />
+          <span className="text-sm font-medium">Background Music</span>
+        </div>
+        {chips.length > 0 && (
+          <span className="font-mono text-xs text-muted">{chips.join(" · ")}</span>
+        )}
+      </div>
+      <audio key={src} src={src} controls preload="metadata" className="w-full" />
+      <div className="mt-3 flex justify-end">
+        <a
+          href={src}
+          download
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-medium transition-colors hover:bg-surface-2"
+        >
+          <IconDownload className="h-3.5 w-3.5" />
+          Download {music.title}
+        </a>
+      </div>
     </div>
   );
 }

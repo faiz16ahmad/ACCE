@@ -166,7 +166,7 @@ export function RunWorkspace({ jobId }: { jobId: string }) {
           (succeeded ? (
             <div className="flex flex-col gap-8">
               <VideoPreview artifacts={artifacts} />
-              <AudioPreview artifacts={artifacts} />
+              <AudioPreview jobId={jobId} artifacts={artifacts} />
             </div>
           ) : (
             <PendingPanel label="Your video preview" />

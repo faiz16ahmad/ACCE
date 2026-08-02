@@ -1,6 +1,6 @@
 /** Typed client for the ACCE FastAPI backend. */
 
-import type { ArtifactDto, HealthDto, JobRecordDto, JobSummary, UserInputDto } from "./types";
+import type { ArtifactDto, HealthDto, JobRecordDto, JobSummary, MusicDto, UserInputDto } from "./types";
 
 export const DEFAULT_API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
@@ -38,7 +38,15 @@ export const api = {
 
   getArtifacts: (jobId: string) =>
     request<{ artifacts: ArtifactDto[] }>(`/api/jobs/${encodeURIComponent(jobId)}/artifacts`),
+
+  getMusic: (jobId: string) =>
+    request<{ music: MusicDto | null }>(`/api/jobs/${encodeURIComponent(jobId)}/music`),
 };
+
+/** Absolute URL for a job's music stream (from `MusicDto.url`). */
+export function musicUrl(url: string): string {
+  return `${apiBase}${url}`;
+}
 
 /** Turn an artifact `url` (e.g. `/artifacts/job-x/production/final_video.mp4`) into an absolute URL. */
 export function artifactUrl(url: string): string {

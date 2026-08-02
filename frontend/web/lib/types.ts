@@ -68,6 +68,16 @@ export interface ArtifactDto {
   mime: string;
 }
 
+/** Background-music bed selected for a job (`GET /api/jobs/{id}/music`). */
+export interface MusicDto {
+  title: string;
+  provider?: string | null;
+  license?: string | null;
+  bpm?: number | null;
+  duration?: number | null;
+  url: string;
+}
+
 export interface HealthDto {
   status: string;
   app: string;
