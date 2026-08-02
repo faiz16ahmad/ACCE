@@ -6,12 +6,15 @@ import json
 import mimetypes
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from config.settings import Settings
 from core.models import UserInput
+
+from modules.director.schemas import MusicEdit
+from modules.director.service import DirectorService
 
 from .jobs import JobStore, list_artifacts, read_job_meta, scan_job_dirs
 
@@ -154,3 +157,147 @@ def _music_info(job_id: str, output_dir: Path | None = None) -> dict | None:
         "duration": asset_info.get("duration") or meta.get("music_duration"),
         "url": f"/api/jobs/{job_id}/music/stream",
     }
+
+
+# ---------------------------------------------------------------------------
+#  Music library (Director Mode §4)
+# ---------------------------------------------------------------------------
+
+@router.get("/music/library")
+def list_music_library(q: str = "", provider: str = "") -> dict:
+    """Unified library index: bundled + uploaded tracks."""
+    from modules.director.library import BundledSource, MusicLibrary, UploadSource
+    from modules.director.schemas import MusicTrack as MusicTrackDTO
+    job_dirs = settings.paths.output_dir.iterdir()
+    # V1: library is per-run for uploads but bundled is global.
+    bundled = BundledSource(settings.music.local_dir)
+    sources = [bundled]
+    # Scan uploads from all jobs' director/upload dirs (flat list for now).
+    # For V1 we only include uploads from jobs the user has visited.
+    tracks: list[MusicTrackDTO] = []
+    ffmpeg = settings.production.ffmpeg_path or "ffmpeg"
+    for source in sources:
+        for t in source.list(ffmpeg):
+            tracks.append(t)
+    # filter
+    if q:
+        q_lower = q.lower()
+        tracks = [t for t in tracks if q_lower in t.title.lower()]
+    if provider:
+        tracks = [t for t in tracks if t.provider == provider]
+    return {"tracks": [t.model_dump(mode="json") for t in tracks]}
+
+
+@router.get("/music/library/{track_id:path}/stream")
+def stream_library_track(track_id: str) -> FileResponse:
+    from modules.director.library import BundledSource
+    bundled = BundledSource(settings.music.local_dir)
+    path = bundled.resolve(track_id)
+    if path is None or not path.is_file():
+        # also check uploads (scan all jobs)
+        for job_dir in settings.paths.output_dir.iterdir():
+            upload_dir = job_dir / "director" / "uploads"
+            if not upload_dir.is_dir():
+                continue
+            for p in upload_dir.rglob("*"):
+                if p.suffix.lower() in {".mp3", ".wav", ".ogg", ".m4a", ".flac"}:
+                    uid = f"upload:{p.stem}"
+                    if uid == track_id:
+                        path = p
+                        break
+            if path is not None and path.is_file():
+                break
+    if path is None or not path.is_file():
+        raise HTTPException(status_code=404, detail=f"track not found: {track_id}")
+    media_type = mimetypes.guess_type(path.name)[0] or "audio/wav"
+    return FileResponse(path, media_type=media_type, filename=path.name)
+
+
+# ---------------------------------------------------------------------------
+#  Director Mode endpoints (§9)
+# ---------------------------------------------------------------------------
+
+class MusicEditRequest(BaseModel):
+    mode: str = "ai"
+    track_id: str | None = None
+    volume: float = Field(0.2, ge=0.0, le=1.0)
+    fade_in: float = Field(1.0, ge=0.0)
+    fade_out: float = Field(1.0, ge=0.0)
+    duck: bool = True
+    loop: bool = True
+
+
+@router.get("/jobs/{job_id}/director")
+def get_director(job_id: str) -> dict:
+    svc = _director_svc(job_id)
+    snap = svc.snapshot()
+    return {
+        "state": snap.state.model_dump(mode="json"),
+        "current_track": snap.current_track.model_dump(mode="json") if snap.current_track else None,
+        "recommendations": [t.model_dump(mode="json") for t in snap.recommendations],
+        "library": [t.model_dump(mode="json") for t in snap.library],
+    }
+
+
+@router.put("/jobs/{job_id}/director/music")
+def set_music(job_id: str, req: MusicEditRequest) -> dict:
+    svc = _director_svc(job_id)
+    track_ref = MusicEdit(mode=req.mode, volume=req.volume, fade_in=req.fade_in,
+                          fade_out=req.fade_out, duck=req.duck, loop=req.loop)
+    if req.track_id:
+        from modules.director.schemas import TrackRef
+        track_ref.track_ref = TrackRef(track_id=req.track_id)
+    snap = svc.set_music(track_ref)
+    return {
+        "state": snap.state.model_dump(mode="json"),
+        "current_track": snap.current_track.model_dump(mode="json") if snap.current_track else None,
+    }
+
+
+@router.post("/jobs/{job_id}/director/upload")
+def upload_track(job_id: str, file: UploadFile = File(...)) -> dict:
+    svc = _director_svc(job_id)
+    content = file.file.read()
+    snap = svc.upload(file.filename or "upload.wav", content)
+    return {
+        "state": snap.state.model_dump(mode="json"),
+        "library": [t.model_dump(mode="json") for t in snap.library],
+    }
+
+
+@router.post("/jobs/{job_id}/director/preview")
+def create_preview(job_id: str) -> dict:
+    svc = _director_svc(job_id)
+    preview_path = svc.preview()
+    url = f"/artifacts/{job_id}/director/preview/{preview_path.name}"
+    return {"preview_url": url}
+
+
+@router.post("/jobs/{job_id}/director/export")
+def create_export(job_id: str) -> dict:
+    svc = _director_svc(job_id)
+    record = svc.export()
+    return {"export": record.model_dump(mode="json")}
+
+
+@router.get("/jobs/{job_id}/exports")
+def list_exports(job_id: str) -> dict:
+    svc = _director_svc(job_id)
+    return {"exports": [e.model_dump(mode="json") for e in svc.exports()]}
+
+
+@router.delete("/jobs/{job_id}/exports/{export_id}")
+def delete_export(job_id: str, export_id: str) -> dict:
+    svc = _director_svc(job_id)
+    export_dir = svc.store.exports_dir / export_id
+    if export_dir.is_dir():
+        import shutil
+        shutil.rmtree(export_dir)
+    state = svc.store.load()
+    state.exports = [e for e in state.exports if e.export_id != export_id]
+    svc.store.save(state)
+    return {"deleted": export_id}
+
+
+def _director_svc(job_id: str) -> DirectorService:
+    return DirectorService(job_id, settings)
