@@ -13,10 +13,11 @@ converts that narration into a timed `scene_plan.json`; the **Shot Planner**
 converts each scene into an ordered visual shot plan (`shot_plan.json`); the
 **Media** stage retrieves the best visual asset per scene through a **Cache → Pexels → Pixabay
 → Wikimedia** chain with deterministic ranking and auto-caching downloads
-(`media_plan.json`); the **Audio** stage generates narration (configured TTS),
-selects background music by script style (**Pixabay Music → Local → Stub**),
-mixes with volume + fades, and writes sentence-based subtitles (`audio.json` +
-`subtitles.srt`); the **Production** stage builds an explicit timeline from
+(`media_plan.json`); the **Audio** stage generates narration (configured TTS), plans a music intent
+(emotion/energy/tempo) and retrieves a matching background-music bed from a
+**Pixabay Music → Local → Stub** chain using deterministic weighted ranking —
+the bed is looped and ducked under the narration — then mixes (volume + fades)
+and writes sentence-based subtitles (`audio.json` + `subtitles.srt`); the **Production** stage builds an explicit timeline from
 actual narration durations and a self-contained **render manifest**
 (`render_manifest.json`) and renders through an isolated Renderer interface —
 **stub** (default, no FFmpeg) or **FFmpeg** — with xfade transitions, burning
@@ -29,9 +30,9 @@ still runs end-to-end. **ACCE Studio** (`frontend/web/`, Next.js + Tailwind +
 TypeScript) is a dark-first dashboard on top of the API: project list, a
 Generate flow (topic → duration → style), live stage-by-stage pipeline
 progress with timestamps, a per-stage **artifact explorer**, **video preview
-+ download**, **audio preview** (master mix + per-scene narrations), a
-**quality panel** (score, warnings/errors, suggested fixes, retry advice), and
-logs.
++ download**, **audio preview** (master mix + per-scene narrations + the
+background-music bed), a **quality panel** (score, warnings/errors, suggested
+fixes, retry advice), and logs.
 
 Real providers are selected through `.env`, never code changes. The stub
 remains the default so the pipeline runs without keys.
@@ -80,6 +81,9 @@ uv sync --extra tts
 # Inspect a finished job:
 uv run python main.py status <job_id>
 
+# Check the environment is production-ready (FFmpeg, providers, keys):
+uv run python main.py doctor
+
 # Run the dashboard API:
 uv run python main.py api           # then GET http://127.0.0.1:8000/api/health
 
@@ -108,10 +112,46 @@ ACCE_TTS__VOICE=en-US-AriaNeural
 # Production
 ACCE_PRODUCTION__RENDERER=ffmpeg
 ACCE_PRODUCTION__FFMPEG_PATH=/path/to/ffmpeg
+
+# Music (local library = assets/music/; enable "pixabay" + a key to fetch
+# real tracks at runtime instead)
+ACCE_MUSIC__PROVIDERS=["local","stub"]
+ACCE_AUDIO__MUSIC_DUCK=true
+ACCE_AUDIO__MUSIC_VOLUME=0.2
 ```
 
 Every stage writes its output under `out/<job_id>/<stage>/` — e.g.
 `out/job-abc123/research/research.json`, `.../production/subtitles.srt`.
+
+## Background Music
+
+Music is selected deterministically at generate time — nothing is streamed or
+downloaded at runtime unless you enable the Pixabay provider. The retriever
+builds a query from the script style + the LLM's music intent
+(`emotion` / `energy` / `tempo`) and searches the provider chain
+**Pixabay Music → Local → Stub** (`ACCE_MUSIC__PROVIDERS`). With no Pixabay key
+the chain falls straight to the **local library**:
+
+```
+assets/music/            # drop your own royalty-free beds here (.mp3/.wav/.ogg/.m4a/.flac)
+ calm_ambient_bed.wav        → "calm ambient …"
+ cinematic_tense_bed.wav     → "cinematic tense …"
+ hopeful_atmospheric_bed.wav → "hopeful atmospheric …"
+ serious_documentary_bed.wav → "serious documentary …"
+ uplifting_upbeat_bed.wav    → "uplifting upbeat …"
+```
+
+Each candidate is scored with fixed weights — **duration 40%, tempo 30%,
+energy 10%, filename keyword 20%** — and rejected below the `0.5` satisfactory
+threshold (a run can legitimately come out narration-only). Duration is
+loop-aware: the timeline loops beds, so a shorter bed degrades toward neutral
+instead of being disqualified. The winning bed is **looped** to cover the full
+narration span, **ducked** under the voice, and normalized to −16 LUFS.
+
+The Studio **Preview → Audio** tab plays the selected bed, the master mix, and
+per-scene narrations (`audio.json` + `music_assets.json` record what was
+picked and why). Rename or add files in `assets/music/` to change what can be
+selected — filenames drive both the chain pre-sort and the keyword score.
 
 ## Layout
 
@@ -124,7 +164,7 @@ config/      pydantic-settings (.env)
 frontend/    FastAPI API + Next.js web dashboard
 tests/       contracts, cache, per-module, orchestrator
 docs/        architecture (V1) + architecture-v2 (frozen V2 reference) + roadmap
-main.py      CLI: generate / status / api
+main.py      CLI: generate / status / doctor / api
 ```
 
 ## Design rules
