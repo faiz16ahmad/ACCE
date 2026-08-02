@@ -56,7 +56,25 @@ def test_build_mix_command_places_and_levels_segments(tmp_path):
 
 def test_build_mix_command_ducks_music_under_narration(tmp_path):
     cmd = build_mix_command(_plan(tmp_path), tmp_path / "master.m4a")
-    assert "sidechaincompress=threshold=0.03:ratio=6:attack=20:release=300" in " ".join(cmd)
+    joined = " ".join(cmd)
+    assert "sidechaincompress=threshold=0.03:ratio=6:attack=20:release=300" in joined
+    # Regression: the music bed must be looped so it covers the whole narration
+    # span, and the narration amix must be split so the sidechain gets its own
+    # copy (sharing the stream truncated the amix to its first segment).
+    assert "-stream_loop -1 -i" in joined
+    assert "asplit=2[narrA][narrB]" in joined
+    assert "][narrA]sidechaincompress" in joined
+    assert "][narrB]amix=inputs=2:duration=longest:normalize=0" in joined
+
+
+def test_music_looped_and_capped_when_duck_disabled(tmp_path):
+    cmd = build_mix_command(_plan(tmp_path), tmp_path / "master.m4a", duck=False)
+    joined = " ".join(cmd)
+    # Looped bed is unbounded; it must be trimmed to the music span so the
+    # narration (longest) ends the mix, and no sidechain is used.
+    assert "-stream_loop -1 -i" in joined
+    assert "atrim=end=5.000" in joined
+    assert "sidechaincompress" not in joined
 
 
 def test_no_duck_when_narration_only(tmp_path):

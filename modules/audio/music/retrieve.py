@@ -66,13 +66,20 @@ def rank_one(asset: MusicAsset, selection: MusicSelection, config: MusicConfig) 
 
 
 def _duration_reason(asset: MusicAsset, duration_hint: float) -> float:
-    """1.0 if the asset covers the clock without looping; else its coverage
-    ratio (a short track scores <1 → looping would be needed)."""
+    """Loop-aware coverage (the timeline loops beds, §5).
+
+    1.0 when the bed covers the clock without looping; below that, degradation
+    is proportional to how many loops would be needed — a shorter bed is never a
+    total mismatch, so it can still be selected over silence (A10) when it
+    clears the satisfactory threshold. Unknown duration is neutral (0.5), not
+    disqualifying (the retriever measures local files where possible)."""
     if duration_hint <= 0:
         return 1.0
     if not asset.duration:
-        return 0.0
-    return 1.0 if asset.duration >= duration_hint else asset.duration / duration_hint
+        return 0.5
+    if asset.duration >= duration_hint:
+        return 1.0
+    return round(0.5 + 0.5 * (asset.duration / duration_hint), 4)
 
 
 def _tempo_reason(asset: MusicAsset, tempo_bpm: int | None, config: MusicConfig) -> float:

@@ -3,9 +3,11 @@
 Consumes only an `AudioMixPlan` and produces an ffmpeg argv: every segment is
 delayed to its timeline position, volume/faded, and mixed with
 `amix(duration=longest, normalize=0)` so volumes are the ones the plan
-specified. When narration + music are both present, the music bed is ducked
-under the narration via `sidechaincompress`, then the whole mix is loudness
-normalized to the standard streaming target (-16 LUFS).
+specified. Music beds are looped (`-stream_loop -1`) so a short bed covers the
+full narration span. When narration + music are both present, the music bed is
+ducked under the narration via `sidechaincompress` (the narration amix is split
+first — sharing the stream truncated it to its first segment), then the whole
+mix is loudness normalized to the standard streaming target (-16 LUFS).
 
 Pure function — unit-testable without a binary. The engine in `engine.py` is
 the only caller.
@@ -56,11 +58,20 @@ def build_mix_command(
     music_labels: list[str] = []
 
     input_index = 0
+    music_end = 0.0
     for index, segment in enumerate(plan.segments):
         source = segment.source_path
         if source is None or not Path(source).exists():
             continue
-        cmd += ["-i", str(source)]
+        if segment.kind == "music":
+            # Loop the bed so it covers the whole narration span: a 60s bed
+            # must keep playing under a 100s narration. `amix` ends the mix at
+            # the longest finite input, and the sidechain caps the loop to the
+            # narration length, so the loop cannot hang the encode.
+            cmd += ["-stream_loop", "-1", "-i", str(source)]
+            music_end = max(music_end, segment.end)
+        else:
+            cmd += ["-i", str(source)]
         chain = ["aformat=sample_fmts=fltp:channel_layouts=stereo"]
         delay_ms = int(round(segment.start * 1000))
         chain.append(f"adelay={delay_ms}|{delay_ms}")
@@ -92,13 +103,26 @@ def build_mix_command(
         narr_mix, music_mix = "[narr]", "[music]"
         filter_parts.append(f"{''.join(narration_labels)}amix=inputs={len(narration_labels)}:duration=longest:normalize=0{narr_mix}")
         filter_parts.append(f"{''.join(music_labels)}amix=inputs={len(music_labels)}:duration=longest:normalize=0{music_mix}")
+        # The narration amix also drives the sidechain; split it so the duck
+        # filter consumes its own copy. Sharing the single stream truncated the
+        # narration amix to its first segment in ffmpeg 8.1.
+        narr_a, narr_b = "[narrA]", "[narrB]"
+        filter_parts.append(f"{narr_mix}asplit=2{narr_a}{narr_b}")
         # Duck the music bed under the narration (sidechain = narration).
         ducked = "[ducked]"
         filter_parts.append(
-            f"{music_mix}{narr_mix}sidechaincompress="
+            f"{music_mix}{narr_a}sidechaincompress="
             f"threshold=0.03:ratio=6:attack=20:release=300{ducked}"
         )
-        filter_parts.append(f"{ducked}{narr_mix}amix=inputs=2:duration=longest:normalize=0{out_label}")
+        filter_parts.append(f"{ducked}{narr_b}amix=inputs=2:duration=longest:normalize=0{out_label}")
+    elif music_labels:
+        # No ducking: cap the looped (unbounded) music to its span so the
+        # narration — the longest finite input — still ends the mix.
+        music_mix = "[music]"
+        capped = "[muscapped]"
+        filter_parts.append(f"{''.join(music_labels)}amix=inputs={len(music_labels)}:duration=longest:normalize=0{music_mix}")
+        filter_parts.append(f"{music_mix}atrim=end={music_end:.3f}{capped}")
+        filter_parts.append(f"{''.join(narration_labels)}{capped}amix=inputs={len(narration_labels) + 1}:duration=longest:normalize=0{out_label}")
     else:
         mixed_labels = "".join(narration_labels + music_labels)
         mixed_inputs = len(narration_labels) + len(music_labels)

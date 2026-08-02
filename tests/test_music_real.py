@@ -145,6 +145,19 @@ def test_ranking_rejects_below_threshold():
     assert rank_assets(assets, selection) == []
 
 
+def test_ranking_loopable_bed_not_rejected_for_short_duration():
+    """Regression: the timeline loops beds (§5), so a bed shorter than the
+    narration must not be disqualified by the duration reason alone — a
+    60s bed under a ~125s narration used to score below the threshold and the
+    mix came out narration-only."""
+    selection = MusicSelection(intent=_intent(emotion="calm"), duration_hint=125.0)
+    short_but_on_mood = _asset("music_0001", title="calm ambient", duration=60.0)
+    ranked = rank_one(short_but_on_mood, selection, MusicConfig())
+    # Loop-aware duration reason: 0.5 + 0.5*(60/125)
+    assert ranked.reasons["duration"] == 0.5 + 0.5 * (60.0 / 125.0)
+    assert ranked.score >= MusicConfig().music_satisfactory_score
+
+
 def test_ranking_keyword_reason_is_normalized():
     selection = MusicSelection(intent=_intent(emotion="tense"), genre_hint="cinematic", duration_hint=0.0)
     ranked = rank_one(_asset("music_0001", title="cinematic tense drums", bpm=None), selection, MusicConfig())

@@ -199,7 +199,7 @@ score(asset) = Σ_k reason_k(asset) × weight_k  /  Σ_k weight_k
 
 | Criterion | Weight (config) | reason_k (deterministic) |
 |---|---|---|
-| `duration` | 0.40 | `1.0` if asset.duration ≥ duration_hint (bed covers the clock, no loop); else `asset.duration / duration_hint` (<1 → looping would be needed) |
+| `duration` | 0.40 | `1.0` if asset.duration ≥ duration_hint (bed covers the clock, no loop); else loop-aware `0.5 + 0.5 × asset.duration/duration_hint` — the timeline loops beds (§5), so a shorter bed degrades smoothly toward neutral instead of being disqualified |
 | `tempo` | 0.30 | `max(0, 1 − |asset.bpm − intent.tempo_bpm| / tempo_tolerance)` when both known; `0.5` (neutral) when bpm or target is unknown |
 | `energy` | 0.10 | `0.5` neutral in V1 (assets carry no energy metadata); set to a distance-based score once tags exist — the *formula* is fixed, only the input source changes |
 | `keyword` | 0.20 | filename/path token overlap with the query (`genre_hint` + emotion + style words), the existing local-provider relevance, normalized to `[0,1]` |
