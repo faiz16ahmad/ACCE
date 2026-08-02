@@ -35,6 +35,7 @@ def test_end_to_end_stub_pipeline(tmp_path):
         (Stage.RESEARCH, "research.json"),
         (Stage.SCRIPT, "script.json"),
         (Stage.SCENES, "scene_plan.json"),
+        (Stage.SHOTS, "shot_plan.json"),
         (Stage.MEDIA, "media_plan.json"),
         (Stage.AUDIO, "audio.json"),
         (Stage.PRODUCTION, "final_video.mp4"),

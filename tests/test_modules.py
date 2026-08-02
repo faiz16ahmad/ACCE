@@ -23,6 +23,8 @@ from modules.research.schemas import ResearchOutput
 from modules.scenes.default import DefaultScenesModule
 from modules.scenes.schemas import ScenePlan
 from modules.script.default import DefaultScriptModule
+from modules.shots.default import DefaultShotsModule
+from modules.shots.schemas import ShotPlan
 from modules.script.schemas import ScriptOutput
 from providers.media_chain import build_media_chain
 from providers.music_chain import build_music_chain
@@ -59,6 +61,15 @@ def test_scenes_module(make_ctx, script):
     assert result.output.scenes
     assert all(s.duration > 0 for s in result.output.scenes)
     assert ctx.store.exists(Stage.SCENES, "scene_plan.json")
+
+
+def test_shots_module(make_ctx, scenes):
+    ctx = make_ctx(**{Stage.SCENES: scenes})
+    result = _exercise(DefaultShotsModule(), ctx, ShotPlan)
+    assert result.output.shots
+    assert all(s.shot_id.startswith("shot_") for s in result.output.shots)
+    assert all(s.scene_id.startswith("scene_") for s in result.output.shots)
+    assert ctx.store.exists(Stage.SHOTS, "shot_plan.json")
 
 
 def test_media_module(make_ctx, scenes, tmp_path):

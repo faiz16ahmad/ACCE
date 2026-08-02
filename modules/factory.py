@@ -25,6 +25,7 @@ from .quality.default import DefaultQualityModule
 from .research.default import DefaultResearchModule
 from .scenes.default import DefaultScenesModule
 from .script.default import DefaultScriptModule
+from .shots.default import DefaultShotsModule
 
 
 def build_orchestrator(
@@ -59,6 +60,7 @@ def build_orchestrator(
         Stage.RESEARCH: DefaultResearchModule(llm, cache, config=settings.research),
         Stage.SCRIPT: DefaultScriptModule(llm, config=settings.script),
         Stage.SCENES: DefaultScenesModule(llm),
+        Stage.SHOTS: DefaultShotsModule(),
         Stage.MEDIA: DefaultMediaModule(media, cache, config=settings.media),
         Stage.AUDIO: DefaultAudioModule(
             tts=get_provider("tts", settings.tts.provider),

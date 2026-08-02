@@ -20,6 +20,7 @@ def test_stage_enum_order():
         "research",
         "script",
         "scenes",
+        "shots",
         "media",
         "audio",
         "production",

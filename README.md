@@ -5,12 +5,13 @@ research report, script, scene timeline, media assets, narration, subtitles,
 thumbnail, title, and description.
 
 **V1 status:** the full pipeline is real and production-ready:
-**Research → Script → Scene Planner → Media → Audio → Production → Quality**.
+**Research → Script → Scene Planner → Shot Planner → Media → Audio → Production → Quality**.
 Research drafts and verifies facts via **Gemini** or **OpenRouter** + live
 source fetch; the **Script** stage writes Hook → Body → Ending narration
 (LLM-written, template fallback) with quality metrics; the **Scene Planner**
-converts that narration into a timed `scene_plan.json`; the **Media** stage
-retrieves the best visual asset per scene through a **Cache → Pexels → Pixabay
+converts that narration into a timed `scene_plan.json`; the **Shot Planner**
+converts each scene into an ordered visual shot plan (`shot_plan.json`); the
+**Media** stage retrieves the best visual asset per scene through a **Cache → Pexels → Pixabay
 → Wikimedia** chain with deterministic ranking and auto-caching downloads
 (`media_plan.json`); the **Audio** stage generates narration (configured TTS),
 selects background music by script style (**Pixabay Music → Local → Stub**),
@@ -48,7 +49,7 @@ remains the default so the pipeline runs without keys.
 ## Pipeline
 
 ```
-Research → Script → Scene Planner → Media Search → Audio → Production → Quality → Output
+Research → Script → Scene Planner → Shot Planner → Media Search → Audio → Production → Quality → Output
 ```
 
 Every stage emits timestamped progress events so you can watch the pipeline
@@ -122,7 +123,7 @@ memory/      DiskCache + per-job ArtifactStore
 config/      pydantic-settings (.env)
 frontend/    FastAPI API + Next.js web dashboard
 tests/       contracts, cache, per-module, orchestrator
-docs/        architecture (Mermaid) + development roadmap
+docs/        architecture (V1) + architecture-v2 (frozen V2 reference) + roadmap
 main.py      CLI: generate / status / api
 ```
 

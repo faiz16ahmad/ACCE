@@ -11,6 +11,7 @@ class Stage(StrEnum):
     RESEARCH = "research"
     SCRIPT = "script"
     SCENES = "scenes"
+    SHOTS = "shots"
     MEDIA = "media"
     AUDIO = "audio"
     PRODUCTION = "production"
