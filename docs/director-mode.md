@@ -151,13 +151,20 @@ a new, per-job store under the job dir:
 out/<job_id>/
   director/
     director.json          # the authoritative editor state (versioned)
-    uploads/               # user-uploaded tracks (copied in → job is self-contained)
     preview/               # transient preview master + preview.mp4
   exports/
     <export_id>/           # immutable exports (see §7)
       final_video.mp4
       export.json
+
+assets/uploads/            # GLOBAL user-uploaded music library (shared across jobs)
+  <file>.mp3/.wav/…
+  manifest.json            # user-assigned name per file (title, original_name, uploaded_at)
 ```
+
+Uploads are **global**, not per-job: a track uploaded from any project appears in
+every project's Director Mode library (see §4). `director.json` only records which
+tracks a job *uses*.
 
 ### `director.json` (v1 schema)
 
@@ -180,7 +187,7 @@ out/<job_id>/
     "duck": true,
     "loop": true
   },
-  "uploads": [ "my-song.mp3" ],        // files in director/uploads/ (probed on index)
+  "uploads": [ "upload:my-song" ],     // uploads this job uses (global library is the source of truth)
   "exports": [ "ex_<ts>_<rand>" ]      // immutable export_ids, newest first
 }
 ```
@@ -192,8 +199,10 @@ out/<job_id>/
   breaking saved state.
 - `music.mode` makes the semantics explicit (`ai` = the original pick, `none` =
   narration-only). "Revert to AI recommendation" is literally `mode: "ai"`.
-- Uploads are **copied** into `director/uploads/` so the job is portable and the
-  original upload in the user's OS is never touched.
+- Uploads are **copied** into the global `assets/uploads/` library so every job can
+  reuse them; the original file in the user's OS is never touched. A sidecar
+  `manifest.json` records the user-assigned name (genre / BGM title), and `track_id`
+  stays stable at `upload:<file stem>` regardless of renames.
 - The **authoritative** records are JSON files on disk (not only in API memory)
   — a Studio refresh or server restart never loses an edit or an export.
 - The **frozen** `mix_plan.json` remains the narration truth. Director only reads
@@ -228,15 +237,17 @@ class MusicSource(ABC):
     def stream(self, track_id: str) -> FileResponse | None: ...
 
 class BundledSource:   # wraps LocalMusicProvider over assets/music/
-class UploadSource:    # per-job director/uploads/ (scoped to a job)
+class UploadSource:    # GLOBAL assets/uploads/ + manifest.json (shared across all jobs)
 class OnlineSource:    # Pixabay (search) when configured; future providers plug in
 ```
 
 - **Bundled** — the existing `assets/music/` folder, via `LocalMusicProvider` +
   the same ffprobe duration probing used by the retriever. Tracks get stable ids
   (`music_0001`, …).
-- **Upload** — files the user dropped for a job, copied into `director/uploads/`.
-  Registered in `director.json`. Probed for duration/bpm where possible.
+- **Upload** — **global** library. Files land in `assets/uploads/` (gitignored),
+  **named on upload** (user types a genre / BGM title; falls back to filename).
+  A `manifest.json` stores the title so renames don't touch the filesystem stem.
+  The `track_id` is `upload:<stem>` and never changes.
 - **Online** — provider search (Pixabay) is exposed as a *searchable* source when
   a key is configured; hits are materialized the same way the retriever does
   today (download to cache) so `resolve()` returns a local file.
@@ -310,11 +321,16 @@ but reduced to one editable dimension in V1.
 - **Recommended alternatives** — `ranked[1..N]` for the job's saved intent.
 - **Search / filter** — over the unified library (title, emotion, tempo range,
   provider). Purely client-side over `GET /api/music/library`.
-- **Upload** — drag-drop MP3/WAV → `POST /api/jobs/{id}/director/upload`
-  (multipart) → copied to `director/uploads/` → probed → selectable.
-- **Volume slider** — two-tier feel: the HTML player gain changes *instantly*
+- **Upload** — drag-drop MP3/WAV → prompt for **name** (genre / BGM title) →
+  `POST /api/jobs/{id}/director/upload` (multipart + `name`) → copied to global
+  `assets/uploads/` + `manifest.json` entry → probed for duration → selectable in
+  every project's library.
+- **Volume / fade sliders** — the HTML `<audio>` player gain changes *instantly*
   while dragging (client-side, zero server cost); on release the authoritative
-  remix/remux is triggered so the preview reflects the baked mix.
+  remix/remux is triggered so the preview reflects the baked mix. The remixer
+  runs with **loudness normalization disabled**, so the user's volume/fade
+  choices are preserved exactly — the pipeline's loudnorm would otherwise
+  re-normalize the bed back to the streaming target, making edits inaudible.
 - **Preview** — see §6. Debounced (≈600ms after last edit).
 - **Export** — creates an immutable export (§7). Each export records the exact
   music state snapshot that produced it.
@@ -438,7 +454,8 @@ orchestrator, or the frozen artifact layout.
 | `GET /api/music/library/{track_id}/stream` | play any library track |
 | `GET /api/jobs/{id}/director` | current `DirectorState` |
 | `PUT /api/jobs/{id}/director/music` | set `mode` / `track_ref` / volume / fades (no mix yet) |
-| `POST /api/jobs/{id}/director/upload` | multipart MP3/WAV → `director/uploads/` |
+| `POST /api/jobs/{id}/director/upload` | multipart MP3/WAV + `name` (genre/BGM title) → global `assets/uploads/` |
+| `PUT /api/music/library/upload/{track_id}/name` | rename an uploaded track (update manifest) |
 | `POST /api/jobs/{id}/director/preview` | remix + remux → `director/preview/preview.mp4` (cached) |
 | `POST /api/jobs/{id}/director/export` | create an immutable export |
 | `GET /api/jobs/{id}/exports` | export history |

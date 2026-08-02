@@ -129,3 +129,17 @@ def test_empty_plan_produces_silence(tmp_path):
 def test_silence_command_helpers(tmp_path):
     cmd = _silence_command(tmp_path / "s.m4a", "ffmpeg")
     assert "anullsrc" in " ".join(cmd) and "aac" in cmd
+
+
+def test_loudnorm_applied_by_default(tmp_path):
+    cmd = build_mix_command(_plan(tmp_path), tmp_path / "master.m4a")
+    filter_complex = " ".join(cmd)
+    assert "loudnorm=" in filter_complex
+
+
+def test_loudnorm_skipped_when_loudness_false(tmp_path):
+    """Director Mode remixes preserve the user's volume — no loudnorm."""
+    cmd = build_mix_command(_plan(tmp_path), tmp_path / "master.m4a", loudness=False)
+    filter_complex = " ".join(cmd)
+    assert "loudnorm=" not in filter_complex
+    assert "volume=1.0000" in filter_complex  # master_gain still applied

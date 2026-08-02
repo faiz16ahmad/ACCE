@@ -46,3 +46,6 @@ node_modules/
 
 # Claude Code local config (keep .claude/settings.json if added later)
 .claude/settings.local.json
+
+# Director Mode: global user-uploaded music library
+assets/uploads/

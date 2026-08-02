@@ -49,8 +49,14 @@ def build_mix_command(
     *,
     ffmpeg_path: str = "ffmpeg",
     duck: bool = True,
+    loudness: bool = True,
 ) -> list[str]:
-    """Build the ffmpeg argv that mixes `plan` into `out_path`."""
+    """Build the ffmpeg argv that mixes `plan` into `out_path`.
+
+    `loudness=False` skips the final loudnorm normalization so a caller's
+    volume/fade choices are preserved exactly (Director Mode remixes use this —
+    the user's bed volume is the boss, not the streaming loudness target).
+    """
     out_path = Path(out_path)
     cmd: list[str] = [ffmpeg_path, "-y"]
     filter_parts: list[str] = []
@@ -130,17 +136,21 @@ def build_mix_command(
             f"{mixed_labels}amix=inputs={mixed_inputs}:duration=longest:normalize=0{out_label}"
         )
 
-    # Master gain + loudness normalization to the streaming target.
+    # Master gain, then loudness normalization to the streaming target — unless
+    # the caller opts out (Director Mode) so their volume is preserved exactly.
     gain_label = "[gained]"
     filter_parts.append(f"{out_label}volume={plan.master_gain:.4f}{gain_label}")
-    loud_label = "[loud]"
-    filter_parts.append(f"{gain_label}loudnorm={LOUDNESS_TARGET}{loud_label}")
+    final_label = gain_label
+    if loudness:
+        loud_label = "[loud]"
+        filter_parts.append(f"{gain_label}loudnorm={LOUDNESS_TARGET}{loud_label}")
+        final_label = loud_label
 
     cmd += [
         "-filter_complex",
         ";".join(filter_parts),
         "-map",
-        loud_label,
+        final_label,
         "-c:a",
         AUDIO_CODEC,
         "-b:a",

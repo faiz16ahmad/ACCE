@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { api, artifactUrl, libraryTrackUrl, musicUrl } from "@/lib/api";
+import { api, artifactUrl, libraryTrackUrl } from "@/lib/api";
 import type {
   DirectorSnapshotDto,
   DirectorStateDto,
@@ -111,12 +111,10 @@ export function DirectorMode({ jobId }: { jobId: string }) {
   }, [jobId]);
 
   const doUpload = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+    async (file: File, name: string) => {
       setUploading(true);
       try {
-        await api.uploadDirectorTrack(jobId, file);
+        await api.uploadDirectorTrack(jobId, file, name);
         await refresh();
       } finally {
         setUploading(false);
@@ -161,6 +159,7 @@ export function DirectorMode({ jobId }: { jobId: string }) {
               isAi={music.mode === "ai"}
               state={music}
               onSet={setMusic}
+              onPreview={doPreview}
               onRevert={() => setMusic({ mode: "ai" })}
               onRemove={() => setMusic({ mode: "none" })}
               busy={busyAction === "music"}
@@ -205,27 +204,11 @@ export function DirectorMode({ jobId }: { jobId: string }) {
         />
 
         {/* ---------- upload ---------- */}
-        <section>
-          <h4 className="mb-2 text-xs font-medium uppercase text-muted">Upload Your Own</h4>
-          <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-surface-2 p-4 text-xs text-muted transition-colors hover:border-accent/60 hover:text-muted/80">
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".mp3,.wav,.ogg,.m4a,.flac"
-              className="hidden"
-              onChange={doUpload}
-              disabled={uploading}
-            />
-            {uploading ? (
-              <Spinner className="h-4 w-4" />
-            ) : (
-              <>
-                <IconLayers className="h-4 w-4" />
-                <span>Click to browse (MP3 / WAV)</span>
-              </>
-            )}
-          </label>
-        </section>
+        <UploadSection
+          uploading={uploading}
+          onUpload={doUpload}
+          inputRef={fileRef}
+        />
 
         {/* ---------- preview + export ---------- */}
         <section className="flex flex-col gap-3">
@@ -261,22 +244,13 @@ export function DirectorMode({ jobId }: { jobId: string }) {
           {/* preview player */}
           {previewUrl && (
             <div className="rounded-lg border border-border bg-surface-1 p-3">
-              <p className="mb-2 text-xs font-medium text-muted">Preview</p>
-              {previewUrl.endsWith(".mp4") || previewUrl.endsWith(".webm") ? (
-                <video
-                  key={previewUrl}
-                  src={artifactUrl(previewUrl)}
-                  controls
-                  className="w-full rounded"
-                />
-              ) : (
-                <audio
-                  key={previewUrl}
-                  src={artifactUrl(previewUrl)}
-                  controls
-                  className="w-full"
-                />
-              )}
+              <p className="mb-2 text-xs font-medium text-muted">Preview (baked mix)</p>
+              <video
+                key={previewUrl}
+                src={artifactUrl(previewUrl)}
+                controls
+                className="w-full rounded"
+              />
             </div>
           )}
 
@@ -311,14 +285,17 @@ export function DirectorMode({ jobId }: { jobId: string }) {
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-/*  Sub-components                                                     */
+/*  Current music — volume/fades/mute (instant player + baked remix)   */
 /* ────────────────────────────────────────────────────────────────── */
+
+const MAX_FADE = 8; // seconds, mirrors ACCE_AUDIO__MUSIC_MAX_FADE
 
 function CurrentMusic({
   track,
   isAi,
   state,
   onSet,
+  onPreview,
   onRevert,
   onRemove,
   busy,
@@ -327,34 +304,46 @@ function CurrentMusic({
   isAi: boolean;
   state: DirectorStateDto["music"];
   onSet: (body: { mode: string; volume?: number; fade_in?: number; fade_out?: number }) => void;
+  onPreview: () => void;
   onRevert: () => void;
   onRemove: () => void;
   busy: boolean;
 }) {
   const [vol, setVol] = useState(state.volume);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [fadeIn, setFadeIn] = useState(state.fade_in);
+  const [fadeOut, setFadeOut] = useState(state.fade_out);
+  const [muted, setMuted] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const commitVolume = useCallback(
-    (v: number) => {
-      onSet({ mode: state.mode, volume: v });
+  /* keep player gain in sync with the slider — the user hears changes NOW */
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = muted ? 0 : vol;
+      audioRef.current.muted = muted;
+    }
+  }, [vol, muted]);
+
+  /* resync local state when the baked state changes (e.g. revert/swap) */
+  useEffect(() => {
+    setVol(state.volume);
+    setFadeIn(state.fade_in);
+    setFadeOut(state.fade_out);
+  }, [state.volume, state.fade_in, state.fade_out]);
+
+  const commit = useCallback(
+    (v: number, fi: number, fo: number) => {
+      onSet({ mode: state.mode, volume: v, fade_in: fi, fade_out: fo });
     },
     [onSet, state.mode],
   );
 
-  const onSliderChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const v = parseFloat(e.target.value);
-      setVol(v);
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => commitVolume(v), 200);
-    },
-    [commitVolume],
-  );
-
-  const onSliderEnd = useCallback(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    commitVolume(vol);
-  }, [vol, commitVolume]);
+  /* called on release of any control: commit the final value + re-bake the mix */
+  const release = useCallback(() => {
+    if (commitTimer.current) clearTimeout(commitTimer.current);
+    commit(vol, fadeIn, fadeOut);
+    onPreview();
+  }, [commit, vol, fadeIn, fadeOut, onPreview]);
 
   const src = libraryTrackUrl(track.track_id);
 
@@ -371,6 +360,18 @@ function CurrentMusic({
           )}
         </div>
         <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setMuted((m) => !m)}
+            disabled={busy}
+            title={muted ? "Unmute" : "Mute"}
+            className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+              muted
+                ? "bg-danger/15 text-danger"
+                : "text-muted hover:bg-surface-2 hover:text-foreground"
+            }`}
+          >
+            {muted ? "MUTED" : "MUTE"}
+          </button>
           {!isAi && (
             <button
               onClick={onRevert}
@@ -392,23 +393,60 @@ function CurrentMusic({
         </div>
       </div>
 
-      <audio key={src} src={src} controls preload="metadata" className="w-full" />
+      <audio key={src} ref={audioRef} src={src} controls preload="metadata" className="w-full" />
 
-      {/* volume row */}
+      {/* volume */}
       <div className="mt-2 flex items-center gap-3">
-        <span className="w-6 text-right text-xs font-mono text-muted">
-          {Math.round(vol * 100)}%
-        </span>
+        <span className="w-9 text-right text-xs font-mono text-muted">vol</span>
         <input
           type="range"
           min="0"
           max="1"
           step="0.05"
           value={vol}
-          onChange={onSliderChange}
-          onMouseUp={onSliderEnd}
+          onChange={(e) => setVol(parseFloat(e.target.value))}
+          onMouseUp={release}
+          onKeyUp={release}
           className="h-1.5 flex-1 cursor-pointer appearance-none rounded bg-surface-2 accent-accent"
         />
+        <span className="w-9 text-xs font-mono text-muted">{Math.round(vol * 100)}%</span>
+      </div>
+
+      {/* fades */}
+      <div className="mt-2 flex items-center gap-3">
+        <span className="w-9 text-right text-xs font-mono text-muted">fade</span>
+        <div className="flex flex-1 items-center gap-2">
+          <label className="flex flex-1 items-center gap-1.5 text-[10px] text-muted">
+            in
+            <input
+              type="range"
+              min="0"
+              max={MAX_FADE}
+              step="0.5"
+              value={fadeIn}
+              onChange={(e) => setFadeIn(parseFloat(e.target.value))}
+              onMouseUp={release}
+              onKeyUp={release}
+              className="h-1 flex-1 cursor-pointer appearance-none rounded bg-surface-2 accent-accent"
+            />
+            <span className="w-7 font-mono">{fadeIn.toFixed(1)}s</span>
+          </label>
+          <label className="flex flex-1 items-center gap-1.5 text-[10px] text-muted">
+            out
+            <input
+              type="range"
+              min="0"
+              max={MAX_FADE}
+              step="0.5"
+              value={fadeOut}
+              onChange={(e) => setFadeOut(parseFloat(e.target.value))}
+              onMouseUp={release}
+              onKeyUp={release}
+              className="h-1 flex-1 cursor-pointer appearance-none rounded bg-surface-2 accent-accent"
+            />
+            <span className="w-7 font-mono">{fadeOut.toFixed(1)}s</span>
+          </label>
+        </div>
       </div>
 
       {/* metadata chips */}
@@ -421,6 +459,10 @@ function CurrentMusic({
     </div>
   );
 }
+
+/* ────────────────────────────────────────────────────────────────── */
+/*  Library rows + upload with name                                   */
+/* ────────────────────────────────────────────────────────────────── */
 
 function TrackRow({
   track,
@@ -436,7 +478,7 @@ function TrackRow({
   const src = libraryTrackUrl(track.track_id);
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs transition-colors hover:border-accent/30">
-      <audio preload="none" controls className="h-7 w-48 min-w-0 flex-shrink" src={src} />
+      <audio preload="none" controls className="h-7 w-44 min-w-0 flex-shrink" src={src} />
       <span className="truncate font-medium min-w-0 flex-1">{track.title}</span>
       <span className="text-muted">{track.duration.toFixed(0)}s</span>
       <span className="text-muted">{track.provider}</span>
@@ -446,11 +488,7 @@ function TrackRow({
         onClick={onSelect}
         disabled={busy || active}
       >
-        {active ? (
-          <IconCheck className="h-3 w-3" />
-        ) : (
-          <IconPlay className="h-3 w-3" />
-        )}
+        {active ? <IconCheck className="h-3 w-3" /> : <IconPlay className="h-3 w-3" />}
         {active ? "Selected" : "Use"}
       </Button>
     </div>
@@ -472,7 +510,6 @@ function LibrarySection({
   const [filtered, setFiltered] = useState(tracks);
   const [loading, setLoading] = useState(false);
 
-  /* filter locally first, then server-filter on query changes */
   useEffect(() => {
     if (!q.trim()) {
       setFiltered(tracks);
@@ -482,7 +519,6 @@ function LibrarySection({
     setFiltered(tracks.filter((t) => t.title.toLowerCase().includes(qLower)));
   }, [tracks, q]);
 
-  /* optional debounced server re-fetch when local filter is too coarse */
   const serverRefetch = useCallback(async () => {
     if (!q.trim()) {
       setFiltered(tracks);
@@ -514,9 +550,7 @@ function LibrarySection({
       />
       {loading && <Spinner className="mb-2 h-4 w-4 text-muted" />}
       <div className="flex max-h-[260px] flex-col gap-1.5 overflow-y-auto pr-1">
-        {filtered.length === 0 && (
-          <p className="py-3 text-center text-xs text-muted">No tracks</p>
-        )}
+        {filtered.length === 0 && <p className="py-3 text-center text-xs text-muted">No tracks</p>}
         {filtered.map((track) => (
           <TrackRow
             key={track.track_id}
@@ -527,6 +561,82 @@ function LibrarySection({
           />
         ))}
       </div>
+    </section>
+  );
+}
+
+function UploadSection({
+  uploading,
+  onUpload,
+  inputRef,
+}: {
+  uploading: boolean;
+  onUpload: (file: File, name: string) => void;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+}) {
+  const [pending, setPending] = useState<File | null>(null);
+  const [name, setName] = useState("");
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPending(file);
+    setName(file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " "));
+  };
+
+  const cancel = () => {
+    setPending(null);
+    if (inputRef.current) inputRef.current.value = "";
+  };
+
+  return (
+    <section>
+      <h4 className="mb-2 text-xs font-medium uppercase text-muted">Upload to Library</h4>
+
+      {pending ? (
+        <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-2 p-3">
+          <p className="text-xs text-muted">
+            Uploading <span className="font-medium text-foreground">{pending.name}</span>
+          </p>
+          <label className="flex items-center gap-2 text-xs">
+            <span className="text-muted">Name it (genre / BGM title)</span>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Space Documentary"
+              className="flex-1 rounded-md border border-border bg-surface-1 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent/40"
+            />
+          </label>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => onUpload(pending, name)}
+              disabled={uploading || !name.trim()}
+            >
+              {uploading ? <Spinner className="h-3.5 w-3.5" /> : <IconCheck className="h-3.5 w-3.5" />}
+              Add to Library
+            </Button>
+            <Button variant="ghost" size="sm" onClick={cancel} disabled={uploading}>
+              Cancel
+            </Button>
+            <span className="text-[10px] text-muted">Available to every project</span>
+          </div>
+        </div>
+      ) : (
+        <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-surface-2 p-4 text-xs text-muted transition-colors hover:border-accent/60 hover:text-muted/80">
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".mp3,.wav,.ogg,.m4a,.flac"
+            className="hidden"
+            onChange={handleFile}
+          />
+          <IconLayers className="h-4 w-4" />
+          <span>Click to browse (MP3 / WAV) — goes to your global music library</span>
+        </label>
+      )}
     </section>
   );
 }

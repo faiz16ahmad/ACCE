@@ -41,6 +41,8 @@ class MusicConfig(BaseModel):
     providers: list[str] = Field(default_factory=lambda: ["stub"])
     pixabay_api_key: str = ""  # or set PIXABAY_API_KEY
     local_dir: str = "assets/music"
+    # Global user-uploaded music library (Director Mode); shared across jobs.
+    upload_dir: str = "assets/uploads"
 
     # --- Music planning/retrieval policy (architecture-audio.md §3.5) ---
     # Normalizer bounds (A7): the LLM proposes, this config enforces.

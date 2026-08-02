@@ -69,8 +69,13 @@ def remix_master(
     ffmpeg_path: str = "ffmpeg",
     duck: bool = True,
 ) -> Path:
-    """Mix `plan` to `out_path` with the existing engine (unchanged)."""
+    """Mix `plan` to `out_path` with the existing engine.
+
+    `loudness=False`: the user's volume/fade choices are preserved exactly —
+    the pipeline's loudnorm normalization would otherwise re-normalize the
+    bed back to the streaming target, making volume edits inaudible.
+    """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    engine = FfmpegAudioEngine(ffmpeg_path=ffmpeg_path, duck=duck)
+    engine = FfmpegAudioEngine(ffmpeg_path=ffmpeg_path, duck=duck, loudness=False)
     return engine.mix(plan, out_path)

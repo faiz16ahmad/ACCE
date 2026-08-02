@@ -280,3 +280,64 @@ def test_service_preview_and_export():
     snap4 = svc.set_music(MusicEdit(mode="none"))
     assert snap4.state.music.mode == "none"
     assert snap4.current_track is None
+
+
+# ── uploads: global library + naming -----------------------------------------
+
+
+def test_upload_source_add_file_records_name(tmp_path):
+    source = UploadSource(str(tmp_path))
+    track_id = source.add_file("my groove.wav", b"fake", name="Deep Space Groove")
+    assert track_id == "upload:my-groove"
+    assert (tmp_path / "my-groove.wav").is_file()
+    tracks = source.list()
+    assert len(tracks) == 1
+    assert tracks[0].title == "Deep Space Groove"
+    assert tracks[0].track_id == "upload:my-groove"
+
+
+def test_upload_source_rename_updates_title(tmp_path):
+    source = UploadSource(str(tmp_path))
+    source.add_file("bed.wav", b"x", name="Original")
+    source.rename("upload:bed", "Moon Mission BGM")
+    tracks = source.list()
+    assert tracks[0].title == "Moon Mission BGM"
+    # renaming never changes the stable track_id
+    assert tracks[0].track_id == "upload:bed"
+
+
+def test_upload_source_name_falls_back_to_stem(tmp_path):
+    source = UploadSource(str(tmp_path))
+    source.add_file("somethingsong.wav", b"x")  # no name given
+    tracks = source.list()
+    assert tracks[0].title == "somethingsong"
+
+
+def test_upload_visible_in_every_job_library(tmp_path):
+    """Uploads are GLOBAL: one upload appears in any job's Director library."""
+    music_dir = tmp_path / "music"
+    music_dir.mkdir()
+    (music_dir / "calm.wav").write_bytes(b"1")
+    upload_root = tmp_path / "uploads"
+
+    from modules.director.service import DirectorService
+
+    class _Settings:
+        class music:
+            local_dir = str(music_dir)
+            upload_dir = str(upload_root)
+
+        class production:
+            ffmpeg_path = "ffmpeg"
+
+        class paths:
+            output_dir = tmp_path / "out"
+
+    # job A uploads a track
+    svc_a = DirectorService("job-a", _Settings())
+    svc_a.upload("mine.wav", b"audio", name="My Track")
+
+    # job B sees it in its library
+    svc_b = DirectorService("job-b", _Settings())
+    titles = [t.title for t in svc_b.list_library() if t.provider == "upload"]
+    assert "My Track" in titles

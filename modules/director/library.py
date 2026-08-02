@@ -11,10 +11,12 @@ never a path. Durations are probed with ffprobe — never guessed.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import subprocess
 from abc import ABC, abstractmethod
+from datetime import UTC, datetime
 from pathlib import Path
 
 from config.settings import MusicConfig, ProductionConfig
@@ -121,23 +123,53 @@ class BundledSource(MusicSource):
 
 
 class UploadSource(MusicSource):
-    """Per-job uploaded tracks (director/uploads/), copied in so the job is self-contained."""
+    """Global user-uploaded tracks, shared across all jobs (Director Mode).
+
+    Files live in a global upload dir (gitignored). A sidecar `manifest.json`
+    records the user-assigned name for each file, so an upload is titled by the
+    user (genre / BGM name) rather than the raw filename. The manifest is the
+    source of truth for titles; `track_id` stays stable (`upload:<stem>`).
+    """
 
     name = "upload"
     chip = "uploaded"
+    MANIFEST = "manifest.json"
 
-    def __init__(self, uploads_dir: Path, license: str | None = None) -> None:
-        self.uploads_dir = uploads_dir
+    def __init__(self, upload_dir: str = "assets/uploads", license: str | None = "user upload") -> None:
+        self.upload_dir = Path(upload_dir)
         self._license = license
+
+    # -- manifest --------------------------------------------------------------
+
+    def _manifest(self) -> dict:
+        path = self.upload_dir / self.MANIFEST
+        if not path.is_file():
+            return {}
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _save_manifest(self, data: dict) -> None:
+        self.upload_dir.mkdir(parents=True, exist_ok=True)
+        (self.upload_dir / self.MANIFEST).write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
+    def _title_for(self, filename: str) -> str:
+        entry = self._manifest().get(filename) or {}
+        return entry.get("title") or Path(filename).stem
+
+    # -- listing / resolution --------------------------------------------------
 
     def list(self, ffmpeg_path: str = "ffmpeg") -> list[MusicTrack]:
         tracks: list[MusicTrack] = []
-        for path in self._scan(self.uploads_dir):
+        for path in self._scan(self.upload_dir):
             stem = path.stem
             tracks.append(
                 MusicTrack(
                     track_id=f"upload:{stem}",
-                    title=stem,
+                    title=self._title_for(path.name),
                     provider=self.name,
                     source=self.chip,
                     duration=probe_duration(path, ffmpeg_path),
@@ -147,10 +179,41 @@ class UploadSource(MusicSource):
         return tracks
 
     def _path_for_stem(self, stem: str) -> Path | None:
-        for p in self._scan(self.uploads_dir):
+        for p in self._scan(self.upload_dir):
             if p.stem == stem:
                 return p
         return None
+
+    # -- add / rename -----------------------------------------------------------
+
+    def add_file(self, filename: str, content: bytes, name: str = "") -> str:
+        """Copy an upload into the global dir and record its user-assigned name."""
+        safe = Path(filename).name.replace(" ", "-")
+        if not safe:
+            raise ValueError("empty filename")
+        self.upload_dir.mkdir(parents=True, exist_ok=True)
+        dest = self.upload_dir / safe
+        dest.write_bytes(content)
+        manifest = self._manifest()
+        manifest[safe] = {
+            "title": name.strip() or Path(safe).stem,
+            "original_name": filename,
+            "uploaded_at": datetime.now(UTC).isoformat(),
+        }
+        self._save_manifest(manifest)
+        return f"upload:{Path(safe).stem}"
+
+    def rename(self, track_id: str, name: str) -> None:
+        """Rename an uploaded track by updating its manifest entry."""
+        if not track_id.startswith(f"{self.name}:"):
+            raise ValueError(f"not an upload: {track_id}")
+        stem = track_id[len(f"{self.name}:"):]
+        path = self._path_for_stem(stem)
+        if path is None:
+            raise ValueError(f"track not found: {track_id}")
+        manifest = self._manifest()
+        manifest[path.name] = {**(manifest.get(path.name) or {}), "title": name.strip() or stem}
+        self._save_manifest(manifest)
 
 
 class MusicLibrary:
@@ -186,9 +249,13 @@ def build_library(
     production_config: ProductionConfig,
     uploads_dir: Path,
 ) -> MusicLibrary:
-    """Wire the V1 sources: bundled + per-job uploads."""
+    """Wire the V1 sources: bundled + global user uploads.
+
+    `uploads_dir` is the *global* upload dir (shared across jobs) — not a
+    per-job directory.
+    """
     sources: list[MusicSource] = [
         BundledSource(local_dir=music_config.local_dir),
-        UploadSource(uploads_dir),
+        UploadSource(upload_dir=str(uploads_dir)),
     ]
     return MusicLibrary(sources, ffmpeg_path=production_config.ffmpeg_path or "ffmpeg")

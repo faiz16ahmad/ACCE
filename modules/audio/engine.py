@@ -47,15 +47,25 @@ class FfmpegAudioEngine(AudioEngine):
 
     name = "ffmpeg"
 
-    def __init__(self, ffmpeg_path: str | None = None, duck: bool = True) -> None:
+    def __init__(
+        self,
+        ffmpeg_path: str | None = None,
+        duck: bool = True,
+        loudness: bool = True,
+    ) -> None:
         self.ffmpeg_path = ffmpeg_path or "ffmpeg"
         self.duck = duck
+        self.loudness = loudness
 
     def mix(self, plan: AudioMixPlan, out_path: Path) -> Path:
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         command = build_mix_command(
-            plan, out_path, ffmpeg_path=self.ffmpeg_path, duck=self.duck
+            plan,
+            out_path,
+            ffmpeg_path=self.ffmpeg_path,
+            duck=self.duck,
+            loudness=self.loudness,
         )
         try:
             proc = subprocess.run(command, capture_output=True, text=True, timeout=600)

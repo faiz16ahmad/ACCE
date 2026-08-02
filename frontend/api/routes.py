@@ -6,7 +6,7 @@ import json
 import mimetypes
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -165,15 +165,14 @@ def _music_info(job_id: str, output_dir: Path | None = None) -> dict | None:
 
 @router.get("/music/library")
 def list_music_library(q: str = "", provider: str = "") -> dict:
-    """Unified library index: bundled + uploaded tracks."""
-    from modules.director.library import BundledSource, MusicLibrary, UploadSource
+    """Unified library index: bundled + global uploaded tracks."""
+    from modules.director.library import BundledSource, UploadSource
     from modules.director.schemas import MusicTrack as MusicTrackDTO
-    job_dirs = settings.paths.output_dir.iterdir()
-    # V1: library is per-run for uploads but bundled is global.
-    bundled = BundledSource(settings.music.local_dir)
-    sources = [bundled]
-    # Scan uploads from all jobs' director/upload dirs (flat list for now).
-    # For V1 we only include uploads from jobs the user has visited.
+    # Uploads are a GLOBAL library (shared across all jobs), not per-job.
+    sources = [
+        BundledSource(settings.music.local_dir),
+        UploadSource(settings.music.upload_dir),
+    ]
     tracks: list[MusicTrackDTO] = []
     ffmpeg = settings.production.ffmpeg_path or "ffmpeg"
     for source in sources:
@@ -190,23 +189,10 @@ def list_music_library(q: str = "", provider: str = "") -> dict:
 
 @router.get("/music/library/{track_id:path}/stream")
 def stream_library_track(track_id: str) -> FileResponse:
-    from modules.director.library import BundledSource
+    from modules.director.library import BundledSource, UploadSource
     bundled = BundledSource(settings.music.local_dir)
-    path = bundled.resolve(track_id)
-    if path is None or not path.is_file():
-        # also check uploads (scan all jobs)
-        for job_dir in settings.paths.output_dir.iterdir():
-            upload_dir = job_dir / "director" / "uploads"
-            if not upload_dir.is_dir():
-                continue
-            for p in upload_dir.rglob("*"):
-                if p.suffix.lower() in {".mp3", ".wav", ".ogg", ".m4a", ".flac"}:
-                    uid = f"upload:{p.stem}"
-                    if uid == track_id:
-                        path = p
-                        break
-            if path is not None and path.is_file():
-                break
+    uploads = UploadSource(settings.music.upload_dir)
+    path = bundled.resolve(track_id) or uploads.resolve(track_id)
     if path is None or not path.is_file():
         raise HTTPException(status_code=404, detail=f"track not found: {track_id}")
     media_type = mimetypes.guess_type(path.name)[0] or "audio/wav"
@@ -225,6 +211,10 @@ class MusicEditRequest(BaseModel):
     fade_out: float = Field(1.0, ge=0.0)
     duck: bool = True
     loop: bool = True
+
+
+class RenameRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
 
 
 @router.get("/jobs/{job_id}/director")
@@ -255,14 +245,34 @@ def set_music(job_id: str, req: MusicEditRequest) -> dict:
 
 
 @router.post("/jobs/{job_id}/director/upload")
-def upload_track(job_id: str, file: UploadFile = File(...)) -> dict:
+def upload_track(job_id: str, file: UploadFile = File(...), name: str = Form("")) -> dict:
+    """Upload a track to the GLOBAL music library, with a user-assigned name.
+
+    `name` is optional — when omitted the file stem is used. The track becomes
+    available to every job's Director Mode library.
+    """
     svc = _director_svc(job_id)
     content = file.file.read()
-    snap = svc.upload(file.filename or "upload.wav", content)
+    snap = svc.upload(file.filename or "upload.wav", content, name=name)
     return {
         "state": snap.state.model_dump(mode="json"),
         "library": [t.model_dump(mode="json") for t in snap.library],
     }
+
+
+@router.put("/music/library/upload/{track_id}/name")
+def rename_upload(track_id: str, req: RenameRequest) -> dict:
+    """Rename a user-uploaded track (genre / BGM name) in the global library."""
+    from modules.director.library import UploadSource
+    source = UploadSource(settings.music.upload_dir)
+    if not track_id.startswith("upload:"):
+        track_id = f"upload:{track_id}"  # accept the bare stem too
+    source.rename(track_id, req.name)
+    track = next(
+        (t for t in source.list(settings.production.ffmpeg_path or "ffmpeg") if t.track_id == track_id),
+        None,
+    )
+    return {"track": track.model_dump(mode="json") if track else None}
 
 
 @router.post("/jobs/{job_id}/director/preview")

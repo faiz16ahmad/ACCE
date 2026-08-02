@@ -78,14 +78,25 @@ export const api = {
       },
     ),
 
-  uploadDirectorTrack: async (jobId: string, file: File) => {
+  uploadDirectorTrack: async (jobId: string, file: File, name: string = "") => {
     const form = new FormData();
     form.append("file", file, file.name);
+    form.append("name", name);
     return request<{ state: DirectorSnapshotDto["state"]; library: MusicTrackDto[] }>(
       `/api/jobs/${encodeURIComponent(jobId)}/director/upload`,
       { method: "POST", body: form },
     );
   },
+
+  renameUploadTrack: (trackId: string, name: string) =>
+    request<{ track: MusicTrackDto | null }>(
+      `/api/music/library/upload/${encodeURIComponent(trackId)}/name`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      },
+    ),
 
   previewDirector: (jobId: string) =>
     request<{ preview_url: string }>(

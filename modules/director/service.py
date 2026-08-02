@@ -60,7 +60,11 @@ class DirectorService:
         if self._library_cache is not None:
             return self._library_cache
         from modules.director.library import BundledSource, UploadSource
-        sources = [BundledSource(self.settings.music.local_dir), UploadSource(self.store.uploads_dir)]
+        # Global uploads (shared across all jobs), not per-job.
+        sources = [
+            BundledSource(self.settings.music.local_dir),
+            UploadSource(self.settings.music.upload_dir),
+        ]
         self.library = MusicLibrary(sources, self.settings.production.ffmpeg_path or "ffmpeg")
         self._library_cache = self.library.list()
         return self._library_cache
@@ -157,8 +161,20 @@ class DirectorService:
 
     # -- upload ----------------------------------------------------------------
 
-    def upload(self, filename: str, content: bytes) -> DirectorSnapshot:
-        self.store.add_upload(filename, content)
+    def upload(self, filename: str, content: bytes, name: str = "") -> DirectorSnapshot:
+        """Add a track to the global music library (shared across all jobs)."""
+        from modules.director.library import UploadSource
+        source = UploadSource(self.settings.music.upload_dir)
+        source.add_file(filename, content, name)
+        self._library_cache = None  # library changed → rebuild on next snapshot
+        return self.snapshot()
+
+    def rename_upload(self, track_id: str, name: str) -> DirectorSnapshot:
+        """Rename a user-uploaded track in the global library."""
+        from modules.director.library import UploadSource
+        source = UploadSource(self.settings.music.upload_dir)
+        source.rename(track_id, name)
+        self._library_cache = None
         return self.snapshot()
 
     # -- preview / export ------------------------------------------------------
