@@ -16,6 +16,7 @@ import { StagePipeline } from "@/components/jobs/StagePipeline";
 import { LogViewer } from "@/components/logs/LogViewer";
 import { VideoPreview } from "@/components/preview/VideoPreview";
 import { AudioPreview } from "@/components/preview/AudioPreview";
+import { DirectorMode } from "@/components/preview/DirectorMode";
 import { ArtifactExplorer } from "@/components/artifacts/ArtifactExplorer";
 import { QualityPanel } from "@/components/quality/QualityPanel";
 import { formatClock } from "@/lib/format";
@@ -167,6 +168,7 @@ export function RunWorkspace({ jobId }: { jobId: string }) {
             <div className="flex flex-col gap-8">
               <VideoPreview artifacts={artifacts} />
               <AudioPreview jobId={jobId} artifacts={artifacts} />
+              <DirectorMode jobId={jobId} />
             </div>
           ) : (
             <PendingPanel label="Your video preview" />

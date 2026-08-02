@@ -78,6 +78,55 @@ export interface MusicDto {
   url: string;
 }
 
+/** Director Mode (§4 music library track, §3 state). */
+export interface MusicTrackDto {
+  track_id: string;
+  title: string;
+  provider: string;
+  source: string;
+  duration: number;
+  bpm?: number | null;
+  license?: string | null;
+  is_ai?: boolean;
+  score?: number | null;
+}
+
+export interface DirectorMusicState {
+  mode: "ai" | "library" | "upload" | "none";
+  track_id?: string | null;
+  volume: number;
+  fade_in: number;
+  fade_out: number;
+  duck: boolean;
+  loop: boolean;
+}
+
+export interface DirectorStateDto {
+  version: number;
+  base: Record<string, unknown>;
+  music: DirectorMusicState;
+  uploads: string[];
+  exports: string[];
+  updated_at: string;
+}
+
+export interface ExportRecordDto {
+  export_id: string;
+  created_at: string;
+  video_path: string;
+  size: number;
+  duration: number;
+  music: DirectorMusicState;
+  url: string;
+}
+
+export interface DirectorSnapshotDto {
+  state: DirectorStateDto;
+  current_track: MusicTrackDto | null;
+  recommendations: MusicTrackDto[];
+  library: MusicTrackDto[];
+}
+
 export interface HealthDto {
   status: string;
   app: string;

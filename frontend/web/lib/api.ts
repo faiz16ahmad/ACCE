@@ -1,6 +1,16 @@
 /** Typed client for the ACCE FastAPI backend. */
 
-import type { ArtifactDto, HealthDto, JobRecordDto, JobSummary, MusicDto, UserInputDto } from "./types";
+import type {
+  ArtifactDto,
+  DirectorSnapshotDto,
+  ExportRecordDto,
+  HealthDto,
+  JobRecordDto,
+  JobSummary,
+  MusicDto,
+  MusicTrackDto,
+  UserInputDto,
+} from "./types";
 
 export const DEFAULT_API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
@@ -41,11 +51,81 @@ export const api = {
 
   getMusic: (jobId: string) =>
     request<{ music: MusicDto | null }>(`/api/jobs/${encodeURIComponent(jobId)}/music`),
+
+  // -- Director Mode ----------------------------------------------------------
+
+  getDirector: (jobId: string) =>
+    request<DirectorSnapshotDto>(`/api/jobs/${encodeURIComponent(jobId)}/director`),
+
+  setDirectorMusic: (
+    jobId: string,
+    body: {
+      mode: string;
+      track_id?: string | null;
+      volume?: number;
+      fade_in?: number;
+      fade_out?: number;
+      duck?: boolean;
+      loop?: boolean;
+    },
+  ) =>
+    request<{ state: DirectorSnapshotDto["state"]; current_track: MusicTrackDto | null }>(
+      `/api/jobs/${encodeURIComponent(jobId)}/director/music`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
+
+  uploadDirectorTrack: async (jobId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return request<{ state: DirectorSnapshotDto["state"]; library: MusicTrackDto[] }>(
+      `/api/jobs/${encodeURIComponent(jobId)}/director/upload`,
+      { method: "POST", body: form },
+    );
+  },
+
+  previewDirector: (jobId: string) =>
+    request<{ preview_url: string }>(
+      `/api/jobs/${encodeURIComponent(jobId)}/director/preview`,
+      { method: "POST" },
+    ),
+
+  exportDirector: (jobId: string) =>
+    request<{ export: ExportRecordDto }>(
+      `/api/jobs/${encodeURIComponent(jobId)}/director/export`,
+      { method: "POST" },
+    ),
+
+  getDirectorExports: (jobId: string) =>
+    request<{ exports: ExportRecordDto[] }>(
+      `/api/jobs/${encodeURIComponent(jobId)}/exports`,
+    ),
+
+  deleteDirectorExport: (jobId: string, exportId: string) =>
+    request<{ deleted: string }>(
+      `/api/jobs/${encodeURIComponent(jobId)}/exports/${encodeURIComponent(exportId)}`,
+      { method: "DELETE" },
+    ),
+
+  // -- Music Library ----------------------------------------------------------
+
+  getMusicLibrary: (query?: string) => {
+    const params = query ? `?q=${encodeURIComponent(query)}` : "";
+    return request<{ tracks: MusicTrackDto[] }>(`/api/music/library${params}`);
+  },
 };
 
 /** Absolute URL for a job's music stream (from `MusicDto.url`). */
 export function musicUrl(url: string): string {
   return `${apiBase}${url}`;
+}
+
+/** Absolute URL for any library track's stream endpoint. */
+export function libraryTrackUrl(trackId: string): string {
+  return `${apiBase}/api/music/library/${encodeURIComponent(trackId)}/stream`;
 }
 
 /** Turn an artifact `url` (e.g. `/artifacts/job-x/production/final_video.mp4`) into an absolute URL. */
