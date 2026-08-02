@@ -42,6 +42,23 @@ class MusicConfig(BaseModel):
     pixabay_api_key: str = ""  # or set PIXABAY_API_KEY
     local_dir: str = "assets/music"
 
+    # --- Music planning/retrieval policy (architecture-audio.md §3.5) ---
+    # Normalizer bounds (A7): the LLM proposes, this config enforces.
+    emotions: tuple[str, ...] = (
+        "calm", "uplifting", "tense", "hopeful", "serious", "playful", "melancholic"
+    )
+    tempo_min: int = 60
+    tempo_max: int = 180
+    tempo_tolerance: int = 25  # bpm window for the deterministic tempo score
+    max_fade_seconds: float = 8.0
+
+    # Deterministic retrieval ranking weights (§3.5); must sum > 0.
+    music_rank_duration: float = 0.40
+    music_rank_tempo: float = 0.30
+    music_rank_energy: float = 0.10
+    music_rank_keyword: float = 0.20
+    music_satisfactory_score: float = 0.5  # below this, a match is rejected
+
 
 class TTSConfig(BaseModel):
     provider: str = "stub"  # "stub" | "edge"
