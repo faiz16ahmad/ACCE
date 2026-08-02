@@ -1,8 +1,9 @@
 # Background Music — Architecture
 
-**Status: APPROVED & FROZEN** (2026-08-02). Implementation proceeds via the
-Shot-style three-phase migration in §8. Phase 1 (structures, no behavior
-change) is implemented; Phases 2–3 are future work tracked in the task list.
+**Status: APPROVED & FROZEN** (2026-08-02). The Shot-style three-phase
+migration in §8 is **complete** (Phases 1–3 implemented). Contracts are
+frozen; future work (multi-track, SFX/ambient, beat sync) extends the plan —
+it never reshapes these models.
 
 **Philosophy (same as the Shot architecture):** LLMs make planning decisions;
 structured plans are normalized; retrieval is deterministic; renderers only
@@ -331,26 +332,31 @@ reordering, not a redesign.
   the mix output is **byte-identical** to today.
 - Tests cover the schemas, normalizer, and ranking determinism.
 
-**Phase 2 — Connect pipeline.**
+**Phase 2 — Connect pipeline.** ✅ implemented
 - Audio module: run Planner → Normalizer → Retriever, replacing
   `_select_music`'s config-genre decision with an LLM intent + deterministic
   retrieval. `style→genre` becomes the `genre_hint`, not the decision.
-- Audio Timeline replaces `_build_mix_plan`: computes music placement
-  (fades/duck/loop/automation) from the plan + assets + measured narration.
-- Additive `duck` field on music `MixSegment`s; renderer unchanged (still
-  adelay+volume+fades+duck+loudnorm).
+- Audio Timeline (`modules/audio/music/timeline.py`) replaces
+  `_build_mix_plan`: computes music placement (fades/duck/loop/automation)
+  from the plan + assets + measured narration, then flattens to the stable
+  `AudioMixPlan`. New artifacts: `audio_plan.json`, `music_assets.json`.
+- Additive `duck` field on music `MixSegment`s (single `DuckSpec` on the
+  stable seam); renderer unchanged (still adelay+volume+fades+duck+loudnorm).
 - `AudioOutput` keeps `music_title`/`music_provider` as derived summaries for
   the UI/quality, sourced from the `MusicAsset`.
 - Factory wires the new modules. V1 default = one continuous bed → the mix
   *sounds* similar; the *source* of the choice changed.
 
-**Phase 3 — Remove legacy behavior.**
-- Delete the `style_genres` decision path and `_select_music`; retire
-  `AudioMetadata.style_genre` (or keep only as the `genre_hint` echo).
-- Move music metadata onto `MusicAsset`/`music_assets.json`; `AudioOutput`
-  summary fields become derived.
-- Update quality with music checks (intent present, asset retrieved, bed
-  duration coverage, duck/fades configured). Update tests.
+**Phase 3 — Remove legacy behavior.** ✅ implemented
+- Deleted the `style_genres` decision path and `_select_music` (and the unused
+  `DEFAULT_GENRE` / `music_style` query string). `AudioMetadata.style_genre`
+  is kept only as the `genre_hint` echo.
+- Music metadata lives on `MusicAsset`/`music_assets.json`; `AudioOutput`
+  summary fields are derived.
+- Quality adds music checks (`audio.missing_music_asset`,
+  `audio.music_bed_coverage`, `audio.music_no_duck`, `audio.music_no_fades`,
+  `audio.missing_music_intent`) — artifact-driven, so legacy runs without the
+  plan artifacts are untouched. Tests updated.
 
 ---
 

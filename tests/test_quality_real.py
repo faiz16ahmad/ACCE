@@ -135,6 +135,44 @@ def clean_ctx(tmp_path):
         ("audio", "audio.json"),
     ]:
         store.save_json(stage, name, {"ok": True})
+    # Phase-3 music artifacts: a real Phase-2 run writes these, and the music
+    # quality checks validate them (intent, asset, bed coverage, duck/fades).
+    store.save_json(
+        "audio",
+        "audio_plan.json",
+        {
+            "music": [
+                {
+                    "emotion": "calm",
+                    "energy": 0.5,
+                    "tempo_bpm": None,
+                    "intensity": 0.5,
+                    "intensity_curve": [],
+                    "style": "documentary",
+                    "fade_preferences": {"fade_in": 1.0, "fade_out": 1.0, "crossfade": False},
+                }
+            ]
+        },
+    )
+    store.save_json(
+        "audio",
+        "mix_plan.json",
+        {
+            "segments": [
+                {"kind": "narration", "start": 0.0, "end": 60.0, "fade_in": 0.2, "fade_out": 0.2},
+                {
+                    "kind": "music",
+                    "start": 0.0,
+                    "end": 60.0,
+                    "volume": 0.2,
+                    "fade_in": 1.0,
+                    "fade_out": 1.0,
+                    "duck": {"depth_db": 8.0, "attack": 0.05, "release": 0.5},
+                },
+            ],
+            "master_gain": 1.0,
+        },
+    )
     return ctx
 
 
@@ -258,6 +296,52 @@ def test_severity_classification(clean_ctx, tmp_path):
     )
     report = _run(clean_ctx)
     assert any(i.code == "research.empty_output" and i.level == "error" for i in report.issues)
+
+
+def _write_mix(ctx, *, music_end: float, duck: bool, fades: bool) -> None:
+    seg = {"kind": "music", "start": 0.0, "end": music_end, "volume": 0.2}
+    if duck:
+        seg["duck"] = {"depth_db": 8.0, "attack": 0.05, "release": 0.5}
+    if fades:
+        seg["fade_in"] = 1.0
+        seg["fade_out"] = 1.0
+    ctx.store.save_json(
+        "audio",
+        "mix_plan.json",
+        {
+            "segments": [
+                {"kind": "narration", "start": 0.0, "end": 60.0, "fade_in": 0.2, "fade_out": 0.2},
+                seg,
+            ],
+            "master_gain": 1.0,
+        },
+    )
+
+
+def test_music_missing_asset_warns(clean_ctx):
+    audio = clean_ctx.results[Stage.AUDIO].output
+    narration_only = audio.model_copy(
+        update={"tracks": [AudioTrack(kind="narration", provider="stub", title="n", duration=60.0)]}
+    )
+    _replace(clean_ctx, Stage.AUDIO, narration_only)
+    report = _run(clean_ctx)
+    issue = next(i for i in report.issues if i.code == "audio.missing_music_asset")
+    assert issue.level == "warning"
+
+
+def test_music_bed_coverage_warns(clean_ctx):
+    _write_mix(clean_ctx, music_end=30.0, duck=True, fades=True)  # bed covers half
+    report = _run(clean_ctx)
+    issue = next(i for i in report.issues if i.code == "audio.music_bed_coverage")
+    assert issue.level == "warning"
+
+
+def test_music_duck_and_fades_missing_are_info(clean_ctx):
+    _write_mix(clean_ctx, music_end=60.0, duck=False, fades=False)
+    report = _run(clean_ctx)
+    codes = {i.code for i in report.issues}
+    assert "audio.music_no_duck" in codes and "audio.music_no_fades" in codes
+    assert all(i.level == "info" for i in report.issues if i.code in ("audio.music_no_duck", "audio.music_no_fades"))
 
 
 def test_duration_mismatch_warns(clean_ctx):

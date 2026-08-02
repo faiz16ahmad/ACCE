@@ -18,6 +18,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from ..schemas import DuckSpec  # single definition on the stable seam (A4)
+
 
 class CurvePoint(BaseModel):
     """One point on the intensity arc.
@@ -81,6 +83,7 @@ class MusicAsset(BaseModel):
     asset_id: str
     provider: str
     title: str = ""
+    url: str = ""  # source URL (factual provenance, e.g. for the AudioTrack)
     local_path: Path | None = None
     duration: float = 0.0  # measured file duration
     bpm: int | None = None
@@ -98,14 +101,6 @@ class RankedAsset(BaseModel):
 
 
 # -- Audio Timeline: owns ALL music timing (A4) --------------------------------
-
-
-class DuckSpec(BaseModel):
-    """Narration ducking parameters for a music span (owned by the timeline)."""
-
-    depth_db: float = 8.0
-    attack: float = 0.05
-    release: float = 0.5
 
 
 class LoopSpec(BaseModel):

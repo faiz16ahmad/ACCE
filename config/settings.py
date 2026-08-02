@@ -58,6 +58,7 @@ class MusicConfig(BaseModel):
     music_rank_energy: float = 0.10
     music_rank_keyword: float = 0.20
     music_satisfactory_score: float = 0.5  # below this, a match is rejected
+    music_candidates: int = 5  # candidates fetched per search before ranking
 
 
 class TTSConfig(BaseModel):
@@ -70,7 +71,6 @@ class AudioConfig(BaseModel):
     engine: str = "stub"  # "stub" | "ffmpeg"
     ffmpeg_path: str | None = None  # path to ffmpeg binary (for duration measurement)
     music_duck: bool = True  # duck the music bed under narration (ffmpeg mix)
-    music_style: str = "ambient background music"
     music_volume: float = 0.2
     narration_volume: float = 1.0
     master_gain: float = 1.0

@@ -19,12 +19,12 @@ import re
 import subprocess
 from pathlib import Path
 
-from config.settings import AudioConfig
+from config.settings import AudioConfig, MusicConfig
 from core.errors import InputValidationError
 from core.models import Artifact, JobContext, StageResult
 from core.stages import Stage
 from memory.cache import DiskCache
-from providers.base import TTSProvider
+from providers.base import LLMProvider, TTSProvider
 from providers.models import MusicHit
 from providers.music_chain import MusicChain
 
@@ -32,7 +32,11 @@ from ..scenes.schemas import ScenePlan
 from ..script.schemas import ScriptOutput
 from .engine import AudioEngine
 from .interface import AudioModule
-from .schemas import AudioMetadata, AudioMixPlan, AudioOutput, AudioTrack, MixSegment
+from .music.planner import plan_music
+from .music.retrieve import rank_assets
+from .music.schemas import MusicAsset, MusicIntent, MusicSelection, RankedAsset
+from .music.timeline import build_audio_timeline, flatten_timeline
+from .schemas import AudioMetadata, AudioMixPlan, AudioOutput, AudioTrack
 from .subtitles import build_cues, cues_to_srt
 
 
@@ -70,7 +74,6 @@ def _measure_audio_duration(path: Path, ffmpeg_path: str = "ffmpeg") -> float:
 log = logging.getLogger(__name__)
 
 MUSIC_CACHE_NAMESPACE = "audio"
-DEFAULT_GENRE = "ambient"
 
 
 class DefaultAudioModule(AudioModule):
@@ -83,6 +86,8 @@ class DefaultAudioModule(AudioModule):
         config: AudioConfig | None = None,
         voice: str = "en-US-AriaNeural",
         ffmpeg_path: str | None = None,
+        llm: LLMProvider | None = None,
+        music_config: MusicConfig | None = None,
     ) -> None:
         self.tts = tts
         self.music = music
@@ -91,6 +96,8 @@ class DefaultAudioModule(AudioModule):
         self.config = config or AudioConfig()
         self.voice = voice
         self.ffmpeg_path = ffmpeg_path or (config.ffmpeg_path if config else None) or "ffmpeg"
+        self.llm = llm
+        self.music_config = music_config or MusicConfig()
 
     def validate_input(self, ctx: JobContext) -> None:
         result = ctx.results.get(Stage.SCENES)
@@ -103,20 +110,53 @@ class DefaultAudioModule(AudioModule):
         if ctx.store is None:
             raise RuntimeError("JobContext.store is not set — run through the orchestrator")
 
-        # 1. Narration
+        # 1. Narration (the clock)
         ctx.progress("Generating narration...")
         narration_tracks, written = self._narration(ctx, plan)
         for i, track in enumerate(narration_tracks, 1):
             ctx.progress(f"Scene {i} narration: {track.duration:.1f}s")
+        narration_total = sum(track.duration or 0.0 for track in narration_tracks)
 
-        # 2. Music selection (driven by script style)
-        ctx.progress("Selecting background music...")
-        genre, music_track = self._select_music(ctx, script)
+        # 2. Music planning (LLM proposes intent; normalizer enforces)
+        ctx.progress("Planning background music...")
+        style = getattr(script, "style", "") or ctx.input.style or "explainer"
+        audio_plan = plan_music(
+            plan,
+            topic=ctx.input.topic,
+            style=style,
+            duration=ctx.input.duration,
+            llm=self.llm,
+            audio_config=self.config,
+            music_config=self.music_config,
+        )
+        intent = audio_plan.music[0] if audio_plan.music else None
+        genre_hint = (self.config.style_genres or {}).get(style, "ambient")  # legacy hint only
+        ctx.progress(f"Music intent: {intent.emotion if intent else 'none'}")
 
-        # 3. Mix plan
-        mix_plan = self._build_mix_plan(narration_tracks, music_track)
+        # 3. Music retrieval (deterministic ranking, §3.5)
+        selected: MusicAsset | None = None
+        ranked: list[RankedAsset] = []
+        if intent is not None:
+            ctx.progress("Retrieving background music...")
+            selected, ranked = self._retrieve_music(intent, genre_hint, narration_total)
+            if selected is None:
+                log.warning("no satisfactory music asset; continuing with narration only")
+            else:
+                ctx.progress(f"Music: {selected.title} ({selected.provider})")
 
-        # 4. Audio mixing
+        # 4. Audio timeline (owns ALL music timing)
+        ctx.progress("Building audio timeline...")
+        timeline = build_audio_timeline(
+            audio_plan, selected, narration_total, self.config, self.music_config
+        )
+        mix_plan = flatten_timeline(
+            timeline,
+            narration_tracks,
+            {selected.asset_id: selected} if selected is not None else {},
+            self.config,
+        )
+
+        # 5. Audio mixing
         ctx.progress("Mixing audio...")
         suffix = ".m4a" if getattr(self.engine, "name", "stub") == "ffmpeg" else ".txt"
         mixed = ctx.store.resolve(self.name, f"master_audio{suffix}")
@@ -125,6 +165,11 @@ class DefaultAudioModule(AudioModule):
 
         mix_plan_artifact = self._save(ctx, "mix_plan.json", mix_plan)
         written.append(mix_plan_artifact)
+        written.append(self._save(ctx, "audio_plan.json", audio_plan))
+        if ranked:
+            written.append(
+                self._save(ctx, "music_assets.json", [entry.model_dump(mode="json") for entry in ranked])
+            )
 
         # 5. Subtitle generation — use actual narration durations for timing.
         narr_durations = {
@@ -142,6 +187,7 @@ class DefaultAudioModule(AudioModule):
 
         duration = self._plan_duration(mix_plan)
         ctx.progress(f"Master audio: {duration:.1f}s")
+        music_track = self._music_track(selected) if selected is not None else None
         tracks = [*narration_tracks, music_track] if music_track else narration_tracks
         output = AudioOutput(
             narration_path=narration_path,
@@ -154,7 +200,7 @@ class DefaultAudioModule(AudioModule):
                 narration_duration=duration,
                 music_provider=music_track.provider if music_track else None,
                 music_title=music_track.title if music_track else None,
-                style_genre=genre,
+                style_genre=genre_hint,
                 engine=self.config.engine,
                 voice=self.voice,
                 cue_count=len(cues),
@@ -191,67 +237,74 @@ class DefaultAudioModule(AudioModule):
             written.append(Artifact(stage=self.name.value, name=out.name, path=out))
         return tracks, written
 
-    def _select_music(self, ctx: JobContext, script: ScriptOutput | None) -> tuple[str, AudioTrack | None]:
-        style = getattr(script, "style", "") or ctx.input.style or "explainer"
-        genre = self.config.style_genres.get(style, DEFAULT_GENRE)
-        query = f"{genre} {self.config.music_style}".strip()
+    def _retrieve_music(
+        self, intent: MusicIntent, genre_hint: str, narration_total: float
+    ) -> tuple[MusicAsset | None, list[RankedAsset]]:
+        """Deterministic retrieval (§3.5): rank chain hits, pick the best.
 
-        hit: MusicHit | None = None
-        if self.cache is not None and (cached := self.cache.get(MUSIC_CACHE_NAMESPACE, query)):
+        The planner never selects files (A1); the retriever never changes
+        emotion/intent (A2). No asset passes the threshold -> narration-only
+        (A10).
+        """
+        query = self._music_query(genre_hint, intent)
+        hits = self._search_hits(query)
+        if not hits:
+            return None, []
+        assets = [self._to_asset(hit, f"music_{i:04d}") for i, hit in enumerate(hits)]
+        selection = MusicSelection(intent=intent, duration_hint=narration_total, genre_hint=genre_hint)
+        ranked = rank_assets(assets, selection, self.music_config)
+        return (ranked[0].asset if ranked else None), ranked
+
+    def _search_hits(self, query: str) -> list[MusicHit]:
+        cached = self.cache.get(MUSIC_CACHE_NAMESPACE, query) if self.cache is not None else None
+        if cached is not None:
             log.info("audio: music selection cache hit")
-            hit = MusicHit.model_validate(cached)
-        else:
-            hits = self.music.search(query, count=1)
-            hit = hits[0] if hits else None
-            if hit is None:
-                log.warning("no background music hit; continuing with narration only")
-            elif self.cache is not None:
-                self.cache.set(MUSIC_CACHE_NAMESPACE, query, hit.model_dump(mode="json"))
-        if hit is None:
-            return genre, None
-        return genre, AudioTrack(
-            kind="music",
+            return [MusicHit.model_validate(item) for item in cached]
+        hits = self.music.search(query, count=self.music_config.music_candidates)
+        if hits and self.cache is not None:
+            self.cache.set(MUSIC_CACHE_NAMESPACE, query, [hit.model_dump(mode="json") for hit in hits])
+        return hits
+
+    @staticmethod
+    def _music_query(genre_hint: str, intent: MusicIntent) -> str:
+        """Deterministic query from the hint + intent (genre_hint is a hint, not
+        the decision — the ranking decides)."""
+        return f"{genre_hint} {intent.emotion} background music".strip()
+
+    def _to_asset(self, hit: MusicHit, asset_id: str) -> MusicAsset:
+        """Map a provider hit to a `MusicAsset`.
+
+        The retriever owns "measured file duration" (architecture-audio.md §3):
+        when a provider returns a local file without a duration, measure it so
+        the §3.5 `duration` reason is meaningful instead of 0 (which would drop
+        every real local track below the satisfactory threshold).
+        """
+        duration = hit.duration
+        if not duration and hit.local_path is not None and Path(hit.local_path).exists():
+            duration = _measure_audio_duration(Path(hit.local_path), self.ffmpeg_path)
+        return MusicAsset(
+            asset_id=asset_id,
             provider=hit.provider,
             title=hit.title,
             url=hit.url,
             local_path=hit.local_path,
-            duration=hit.duration,
+            duration=duration or 0.0,
             bpm=hit.bpm,
             license=hit.license,
         )
 
-    def _build_mix_plan(self, narration_tracks: list[AudioTrack], music_track: AudioTrack | None) -> AudioMixPlan:
-        """Timestamped mix plan; V2 beat-sync only replaces this timing logic."""
-        segments: list[MixSegment] = []
-        cursor = 0.0
-        for track in narration_tracks:
-            end = cursor + (track.duration or 5.0)
-            segments.append(
-                MixSegment(
-                    kind="narration",
-                    source_path=track.local_path,
-                    start=cursor,
-                    end=end,
-                    volume=self.config.narration_volume,
-                    fade_in=self.config.narration_fade,
-                    fade_out=self.config.narration_fade,
-                )
-            )
-            cursor = end
-        if music_track is not None:
-            segments.insert(
-                0,
-                MixSegment(
-                    kind="music",
-                    source_path=music_track.local_path,
-                    start=0.0,
-                    end=cursor,
-                    volume=self.config.music_volume,
-                    fade_in=self.config.music_fade,
-                    fade_out=self.config.music_fade,
-                ),
-            )
-        return AudioMixPlan(segments=segments, master_gain=self.config.master_gain)
+    @staticmethod
+    def _music_track(asset: MusicAsset) -> AudioTrack:
+        return AudioTrack(
+            kind="music",
+            provider=asset.provider,
+            title=asset.title,
+            url=asset.url,
+            local_path=asset.local_path,
+            duration=asset.duration or None,
+            bpm=asset.bpm,
+            license=asset.license,
+        )
 
     def _combine_narration(self, ctx: JobContext, tracks: list[AudioTrack]) -> object:
         combined = ctx.store.resolve(self.name, "narration.txt")

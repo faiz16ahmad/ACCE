@@ -452,6 +452,85 @@ class DefaultQualityModule(QualityModule):
                 "audio.missing_music",
                 "Add a music provider (Pixabay Music / Local / Stub).",
             )
+        self._check_music(ctx, out, issues)
+
+    def _check_music(self, ctx: JobContext, out, issues: list[QualityIssue]) -> None:
+        """Music-plan checks (architecture-audio.md §8, Phase 3).
+
+        Artifact-driven: they only fire when the audio stage actually saved the
+        music plan (`audio_plan.json`), so legacy/plan-less runs are untouched.
+        """
+        if ctx.store is None:
+            return
+        plan_path = ctx.store.resolve(Stage.AUDIO, "audio_plan.json")
+        if not plan_path.exists():
+            return
+        try:
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        if not (plan.get("music") or []):
+            self._issue(
+                issues,
+                "info",
+                "audio",
+                "no music intent planned",
+                "audio.missing_music_intent",
+                "Run the Music Planner.",
+            )
+            return
+
+        has_music = any(getattr(track, "kind", "") == "music" for track in out.tracks)
+        if not has_music:
+            self._issue(
+                issues,
+                "warning",
+                "audio",
+                "music planned but no asset retrieved",
+                "audio.missing_music_asset",
+                "Configure a music provider or add local tracks (narration-only continues).",
+            )
+
+        mix_path = ctx.store.resolve(Stage.AUDIO, "mix_plan.json")
+        if not mix_path.exists():
+            return
+        try:
+            mix = json.loads(mix_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        music_segments = [s for s in mix.get("segments", []) if s.get("kind") == "music"]
+        if not music_segments:
+            return
+        if out.duration:
+            bed_end = max(s.get("end", 0.0) for s in music_segments)
+            if abs(bed_end - out.duration) / max(out.duration, 1.0) > self.config.duration_tolerance:
+                self._issue(
+                    issues,
+                    "warning",
+                    "audio",
+                    f"music bed does not cover narration ({bed_end:.1f}s vs {out.duration:.1f}s)",
+                    "audio.music_bed_coverage",
+                    "Extend the music bed to cover the narration.",
+                )
+        first = music_segments[0]
+        if first.get("duck") is None:
+            self._issue(
+                issues,
+                "info",
+                "audio",
+                "music ducking not configured",
+                "audio.music_no_duck",
+                "Configure ducking for the music bed.",
+            )
+        if not (first.get("fade_in") or first.get("fade_out")):
+            self._issue(
+                issues,
+                "info",
+                "audio",
+                "music fades not configured",
+                "audio.music_no_fades",
+                "Configure fade in/out for the music bed.",
+            )
 
     def _check_production(self, ctx: JobContext, issues: list[QualityIssue]) -> None:
         out = self._output(ctx, Stage.PRODUCTION)

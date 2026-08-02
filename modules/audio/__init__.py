@@ -1,7 +1,9 @@
-"""Audio stage: narration TTS + royalty-free background music + mixing.
+"""Audio stage: narration TTS + background music + mixing.
 
-V1 builds a timestamped `AudioMixPlan` and hands it to an `AudioEngine`.
-Beat-synchronization is intentionally NOT implemented in V1; it slots in at
-`DefaultAudioModule._build_mix_plan` in V2 without touching the engine or
-downstream consumers.
+Music is a sub-pipeline (architecture-audio.md): Planner (LLM intent) →
+Normalizer → Retriever (deterministic ranking) → Audio Timeline (owns all
+music timing) → flattens to the stable `AudioMixPlan` handed to an
+`AudioEngine`. Beat-synchronization is intentionally NOT implemented; it slots
+in at `modules.audio.music.timeline` without touching the engine or downstream
+consumers.
 """

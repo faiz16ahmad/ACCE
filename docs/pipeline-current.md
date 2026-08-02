@@ -123,23 +123,31 @@ manifest), quality.
 > fields. Phase 2 migrates this to `shot_id` + shot's `search_queries` /
 > `content_kind` / `media_preference`.
 
-### 3.6 Audio → `AudioOutput` → `out/<job>/audio/audio.json` (+ narration files, `master_audio.*`, `subtitles.srt`, `mix_plan.json`)
+### 3.6 Audio → `AudioOutput` → `out/<job>/audio/audio.json` (+ narration files, `master_audio.*`, `subtitles.srt`, `mix_plan.json`, `audio_plan.json`, `music_assets.json`)
 
 | Field | Notes |
 |---|---|
 | `narration_path`, `music_path`, `mixed_audio_path`, `subtitle_path` | Files. |
 | `duration` | Master mix length (the clock). |
-| `metadata` | `narration_duration`, `music_provider`, `music_title`, `style_genre`, `engine`, `voice`, `cue_count`. |
+| `metadata` | `narration_duration`, `music_provider`, `music_title`, `style_genre` *(genre-hint echo)*, `engine`, `voice`, `cue_count`. |
 | `cues[AudioCue]` | `cue_id`, `index`, `start`, `end`, `text`. |
 | `master_path` *(compat)*, `tracks[]`, `mix_plan_path` | `tracks[kind,provider,title,url,local_path,duration,bpm,license]`. |
 
 `AudioMixPlan` (→ `mix_plan.json`): `segments[MixSegment{kind, source_path,
-start, end, volume, fade_in, fade_out}]`, `master_gain`.
+start, end, volume, fade_in, fade_out, duck?}]`, `master_gain`.
+
+**Music sub-pipeline** (architecture-audio.md, Phases 1–3): Music Planner
+(LLM proposes a `MusicIntent`; deterministic fallback) → Normalizer (A7) →
+`audio_plan.json` (`AudioPlan`, V1 = one intent) → Retriever (deterministic
+ranking §3.5) → `music_assets.json` (`RankedAsset`s with per-criterion
+`reasons`) → Audio Timeline (A4: owns start/end/fades/duck/loop/automation)
+→ flattens to `mix_plan.json`. `AudioOutput.metadata` music fields are derived
+from the selected `MusicAsset`.
 
 **Ownership:** narration/mix — orthogonal to the edit layer (I10). Producer:
-audio module (per-scene TTS, music chain, mix engine, sentence subtitles).
-Consumers: production (mixed audio, subtitle path, **measured narration
-durations**), quality.
+audio module (per-scene TTS, music planner/retriever/timeline, mix engine,
+sentence subtitles). Consumers: production (mixed audio, subtitle path,
+**measured narration durations**), quality (incl. music-plan checks).
 
 > **Seam B:** production reads narration durations from `AudioOutput.tracks`
 > (`kind == "narration"`) to build the timeline. This is the authoritative

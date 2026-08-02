@@ -24,6 +24,19 @@ class AudioTrack(BaseModel):
     license: str = "unknown"
 
 
+class DuckSpec(BaseModel):
+    """Narration-ducking parameters for a music segment (timeline-owned, A4).
+
+    Lives on the stable seam so the renderer can consume it directly. The
+    engine already ducks the whole bed; this spec is the per-segment,
+    plan-level statement of how the timeline wants it done.
+    """
+
+    depth_db: float = 8.0
+    attack: float = 0.05
+    release: float = 0.5
+
+
 class MixSegment(BaseModel):
     kind: Literal["narration", "music"]
     source_path: Path | None = None
@@ -32,6 +45,7 @@ class MixSegment(BaseModel):
     volume: float = 1.0
     fade_in: float = 0.0
     fade_out: float = 0.0
+    duck: DuckSpec | None = None  # additive: music segments may duck under narration
 
 
 class AudioMixPlan(BaseModel):
