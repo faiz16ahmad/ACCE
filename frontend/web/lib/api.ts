@@ -27,7 +27,14 @@ export function setApiBase(base: string): void {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${apiBase}${path}`, { cache: "no-store", ...init });
   if (!res.ok) {
-    throw new Error(`GET ${path} → ${res.status} ${res.statusText}`);
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const body = await res.json();
+      if (body && typeof body.detail === "string" && body.detail) detail = body.detail;
+    } catch {
+      /* non-JSON error body — keep the status line */
+    }
+    throw new Error(detail);
   }
   return (await res.json()) as T;
 }

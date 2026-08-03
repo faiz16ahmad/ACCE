@@ -36,6 +36,7 @@ export function DirectorMode({ jobId }: { jobId: string }) {
   const [exports, setExports] = useState<ExportRecordDto[]>([]);
   const [uploading, setUploading] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   /* --- fetch snapshot on mount --- */
@@ -80,9 +81,12 @@ export function DirectorMode({ jobId }: { jobId: string }) {
       fade_out?: number;
     }) => {
       setBusyAction("music");
+      setActionError(null);
       try {
         const res = await api.setDirectorMusic(jobId, body);
         setSnap((prev) => (prev ? { ...prev, state: res.state, current_track: res.current_track } : prev));
+      } catch (e: any) {
+        setActionError(e?.message ?? "Could not apply that music change.");
       } finally {
         setBusyAction(null);
       }
@@ -92,9 +96,12 @@ export function DirectorMode({ jobId }: { jobId: string }) {
 
   const doPreview = useCallback(async () => {
     setBusyAction("preview");
+    setActionError(null);
     try {
       const { preview_url } = await api.previewDirector(jobId);
       setPreviewUrl(preview_url);
+    } catch (e: any) {
+      setActionError(e?.message ?? "Preview failed — try a different track or re-upload it.");
     } finally {
       setBusyAction(null);
     }
@@ -102,9 +109,12 @@ export function DirectorMode({ jobId }: { jobId: string }) {
 
   const doExport = useCallback(async () => {
     setBusyAction("export");
+    setActionError(null);
     try {
       const { export: rec } = await api.exportDirector(jobId);
       setExports((prev) => [rec, ...prev]);
+    } catch (e: any) {
+      setActionError(e?.message ?? "Export failed — try a different track or re-upload it.");
     } finally {
       setBusyAction(null);
     }
@@ -240,6 +250,13 @@ export function DirectorMode({ jobId }: { jobId: string }) {
               Export
             </Button>
           </div>
+
+          {/* action errors (e.g. corrupt upload → preview/export failed) */}
+          {actionError && (
+            <p className="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              {actionError}
+            </p>
+          )}
 
           {/* preview player */}
           {previewUrl && (

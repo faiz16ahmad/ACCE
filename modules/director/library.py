@@ -58,6 +58,23 @@ def probe_duration(path: Path, ffmpeg_path: str = "ffmpeg") -> float:
     return 0.0
 
 
+def decode_check(path: Path, ffmpeg_path: str = "ffmpeg") -> bool:
+    """True when `path` is a fully decodable audio file.
+
+    `ffmpeg -v error -f null -` decodes the whole file. A corrupt stream — like
+    the un-decodable AAC masters that produced truncated previews — fails here.
+    """
+    path = Path(path)
+    try:
+        proc = subprocess.run(
+            [ffmpeg_path, "-hide_banner", "-v", "error", "-i", str(path), "-f", "null", "-"],
+            capture_output=True, text=True, timeout=60,
+        )
+        return proc.returncode == 0
+    except Exception:
+        return False
+
+
 class MusicSource(ABC):
     """A named source of library tracks (bundled, upload, online…)."""
 

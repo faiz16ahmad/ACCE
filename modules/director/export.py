@@ -31,7 +31,12 @@ def remux(
     *,
     ffmpeg_path: str = "ffmpeg",
 ) -> Path:
-    """Mux the frozen video stream with a new audio master (video copied)."""
+    """Mux the frozen video stream with a new audio master (video copied).
+
+    The output is written to a sibling temp file and atomically renamed only on
+    success, so a failed remux never leaves a partial file at `out_path` — the
+    preview/export cache would otherwise serve the truncated file forever.
+    """
     video_path = Path(video_path)
     master_path = Path(master_path)
     out_path = Path(out_path)
@@ -40,6 +45,7 @@ def remux(
         raise RendererError(f"frozen video missing: {video_path}")
     if not master_path.is_file():
         raise RendererError(f"remixed master missing: {master_path}")
+    tmp = out_path.with_name(f"{out_path.stem}.part{out_path.suffix}")
     cmd = [
         ffmpeg_path, "-y", "-hide_banner", "-loglevel", "error",
         "-i", str(video_path),
@@ -47,13 +53,13 @@ def remux(
         "-map", "0:v", "-map", "1:a",
         "-c:v", "copy", "-c:a", "aac",
         "-shortest",
-        str(out_path),
+        str(tmp),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-    if proc.returncode != 0:
+    if proc.returncode != 0 or not tmp.is_file():
+        tmp.unlink(missing_ok=True)
         raise RendererError(f"remux failed: {(proc.stderr or proc.stdout)[-400:]}")
-    if not out_path.is_file():
-        raise RendererError("remux produced no output")
+    tmp.replace(out_path)
     return out_path
 
 

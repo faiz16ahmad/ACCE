@@ -238,6 +238,44 @@ def test_remux_produces_file(tmp_path):
     assert out.is_file() and out.stat().st_size > 0
 
 
+def test_remux_atomic_no_partial_on_failure(tmp_path):
+    """A failed remux must not leave a partial file at the target path.
+
+    Regression: a corrupt master made ffmpeg abort mid-encode, leaving a
+    truncated preview that the cache then served forever (10s video, no audio).
+    """
+    import subprocess
+    from config.settings import Settings
+    from modules.director.export import remux
+    ff = Settings().production.ffmpeg_path
+    video = tmp_path / "in.mp4"
+    subprocess.run([ff, "-y", "-f", "lavfi", "-i", "color=c=black:s=320x240:d=1", "-c:v", "libx264", "-an", str(video)],
+                   capture_output=True, timeout=30, check=True)
+    # a text file is not decodable audio → remux must fail
+    bad_audio = tmp_path / "bad.m4a"
+    bad_audio.write_text("this is not audio", encoding="utf-8")
+    out = tmp_path / "out.mp4"
+    with pytest.raises(Exception):
+        remux(video, bad_audio, out, ffmpeg_path=ff)
+    assert not out.exists(), "no partial file may remain at the target"
+    assert not list(tmp_path.glob("*.part*")), "no .part temp may remain"
+
+
+def test_decode_check_rejects_garbage(tmp_path):
+    from config.settings import Settings
+    from modules.director.library import decode_check
+    ff = Settings().production.ffmpeg_path
+    bad = tmp_path / "bad.m4a"
+    bad.write_bytes(b"garbage" * 100)
+    assert decode_check(bad, ff) is False
+    # a real generated master passes the check
+    master = tmp_path / "ok.wav"
+    import subprocess
+    subprocess.run([ff, "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "1", str(master)],
+                   capture_output=True, timeout=30, check=True)
+    assert decode_check(master, ff) is True
+
+
 # ── integration (uses real job) --------------------------------------------
 
 
@@ -341,3 +379,26 @@ def test_upload_visible_in_every_job_library(tmp_path):
     svc_b = DirectorService("job-b", _Settings())
     titles = [t.title for t in svc_b.list_library() if t.provider == "upload"]
     assert "My Track" in titles
+
+
+def test_remix_master_raises_clean_error_on_corrupt_track(tmp_path):
+    """A garbage upload must raise a clear error, not a raw ffmpeg dump."""
+    from modules.audio.engine import AudioEngineError
+    from config.settings import Settings
+    from modules.director.remix import build_director_plan, remix_master
+    from modules.director.schemas import MusicEdit, TrackRef
+    ff = Settings().production.ffmpeg_path
+
+    bad = tmp_path / "bad.mp3"
+    bad.write_bytes(b"this is not a valid mp3" * 50)
+
+    plan = AudioMixPlan(
+        segments=[
+            MixSegment(kind="music", source_path=bad, start=0.0, end=10.0, volume=0.3),
+        ],
+        master_gain=1.0,
+    )
+    out = tmp_path / "master.m4a"
+    with pytest.raises(AudioEngineError, match="invalid or partial audio file"):
+        remix_master(plan, out, ffmpeg_path=ff)
+    assert not out.exists(), "failed remix must not leave a master behind"

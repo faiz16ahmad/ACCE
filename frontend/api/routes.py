@@ -13,8 +13,10 @@ from pydantic import BaseModel, Field
 from config.settings import Settings
 from core.models import UserInput
 
+from modules.audio.engine import AudioEngineError
 from modules.director.schemas import MusicEdit
 from modules.director.service import DirectorService
+from modules.production.renderer import RendererError
 
 from .jobs import JobStore, list_artifacts, read_job_meta, scan_job_dirs
 
@@ -278,7 +280,10 @@ def rename_upload(track_id: str, req: RenameRequest) -> dict:
 @router.post("/jobs/{job_id}/director/preview")
 def create_preview(job_id: str) -> dict:
     svc = _director_svc(job_id)
-    preview_path = svc.preview()
+    try:
+        preview_path = svc.preview()
+    except (RendererError, AudioEngineError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     url = f"/artifacts/{job_id}/director/preview/{preview_path.name}"
     return {"preview_url": url}
 
@@ -286,7 +291,10 @@ def create_preview(job_id: str) -> dict:
 @router.post("/jobs/{job_id}/director/export")
 def create_export(job_id: str) -> dict:
     svc = _director_svc(job_id)
-    record = svc.export()
+    try:
+        record = svc.export()
+    except (RendererError, AudioEngineError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"export": record.model_dump(mode="json")}
 
 
