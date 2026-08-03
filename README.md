@@ -6,6 +6,11 @@ thumbnail, title, and description.
 
 **V1 status:** the full pipeline is real and production-ready:
 **Research → Script → Scene Planner → Shot Planner → Media → Audio → Production → Quality**.
+Narration is multilingual: a job's **language** resolves to a `Locale` +
+`Narrator` from data-driven packs (`config/languages/*.yaml`, **English +
+Hindi** shipped), which drive the script tokenizer/pacing, TTS routing
+(capability-advertised providers, graceful stub fallback), subtitle splitting
+(the Devanagari danda), and the subtitle burn font — visuals stay English.
 Research drafts and verifies facts via **Gemini** or **OpenRouter** + live
 source fetch; the **Script** stage writes Hook → Body → Ending narration
 (LLM-written, template fallback) with quality metrics; the **Scene Planner**
@@ -66,6 +71,10 @@ uv sync --extra dev        # or: pip install -e ".[dev]"
 # Run the whole pipeline with stub providers (no keys needed):
 uv run python main.py generate --topic "How neural networks learn" \
     --instruction "keep it beginner friendly" --duration 120
+
+# Narration + subtitles in Hindi (Devanagari):
+uv run python main.py generate --topic "तंत्रिका नेटवर्क" --duration 120 --language hi
+# (real Hindi speech requires edge-tts: `uv sync --extra tts`)
 
 # Real research + script via Gemini: set ACCE_LLM__PROVIDER=gemini
 # and an API key (ACCE_LLM__API_KEY or GEMINI_API_KEY), install the extra:
@@ -152,6 +161,41 @@ The Studio **Preview → Audio** tab plays the selected bed, the master mix, and
 per-scene narrations (`audio.json` + `music_assets.json` record what was
 picked and why). Rename or add files in `assets/music/` to change what can be
 selected — filenames drive both the chain pre-sort and the keyword score.
+
+## Languages
+
+Narration/subtitles are language-driven; visuals and search stay English. A
+language is **data** — one YAML pack in `config/languages/`, validated against
+`LanguageProfile` (`config/languages.py`). Adding a language is adding a file
+(`en.yaml`, `hi.yaml` shipped).
+
+| Field | Meaning |
+|-------|---------|
+| `script` / `readability` | tokenizer + whether Flesch applies (English-only) |
+| `words_per_minute` | pacing estimate + script prompt word budget |
+| `punctuation` | extra sentence terminators (Hindi danda `।`) for subtitles |
+| `tts_preference` | ordered `TTSProvider` candidates for narration |
+| `default_voice` | the default `Narrator` voice (e.g. `hi-IN-MadhurNeural`) |
+| `retrieval_language` | media queries always `en` |
+| `burn_font` | ASS font-family for subtitle burn-in |
+
+- `GET /api/languages` lists installed packs; the Studio Generate flow shows a
+  **Language** picker (`English` / `हिन्दी`).
+- TTS selection is data-driven: the configured provider first, then the pack's
+  `tts_preference`, filtered by each provider's advertised capabilities with
+  graceful stub fallback (`providers/tts_router.py`). No module branches on
+  which engine spoke.
+- TTS providers: `stub` (key-free markers), `edge` (Microsoft neural, key-free,
+  `uv sync --extra tts`), `sarvam` (Sarvam AI Bulbul — multilingual Indic, key
+  required). Set `ACCE_TTS__PROVIDER=auto` for per-language selection
+  (en → edge, hi → sarvam) plus `ACCE_TTS__API_KEYS={"sarvam":…}`. Hindi
+  prefers `[sarvam, edge, stub]` and speaks with the `shubh` voice; when Sarvam
+  is down the router falls through to Edge (still Hindi) then the stub.
+- Flesch readability is English-only: a Hindi job reports no readability score
+  instead of a fake English number on Devanagari text.
+
+See [docs/language-architecture.md](docs/language-architecture.md) (frozen) for
+the full design.
 
 ## Layout
 

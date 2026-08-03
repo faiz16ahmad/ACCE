@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2.2",
     "fastapi>=0.110",
     "uvicorn>=0.29",
+    "pyyaml>=6.0",  # language packs (config/languages/*.yaml)
 ]
 
 [project.optional-dependencies]

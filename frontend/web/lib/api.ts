@@ -7,6 +7,7 @@ import type {
   HealthDto,
   JobRecordDto,
   JobSummary,
+  LanguageDto,
   MusicDto,
   MusicTrackDto,
   UserInputDto,
@@ -41,6 +42,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<HealthDto>("/api/health"),
+
+  getLanguages: () => request<{ languages: LanguageDto[] }>("/api/languages"),
 
   createJob: (input: UserInputDto) =>
     request<{ job_id: string }>("/api/jobs", {

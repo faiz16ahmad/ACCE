@@ -10,13 +10,14 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from .base import LLMProvider, MusicProvider, Provider, ProviderError, TTSProvider
+from .base import LLMProvider, MusicProvider, Provider, ProviderError, TTSProvider, TTSSynthesizeOptions
 from .edge_tts import EdgeTTSProvider
 from .gemini import GeminiProvider
 from .openrouter import OpenRouterProvider
 from .local_music import LocalMusicProvider
 from .pexels import PexelsImageProvider, PexelsVideoProvider
 from .pixabay import PixabayImageProvider, PixabayMusicProvider, PixabayVideoProvider
+from .sarvam_tts import SarvamTTSProvider
 from .stubs.image import StubImageProvider
 from .stubs.llm import StubLLMProvider
 from .stubs.music import StubMusicProvider
@@ -44,7 +45,11 @@ _MUSIC: dict[str, type[MusicProvider]] = {
     "pixabay": PixabayMusicProvider,
     "local": LocalMusicProvider,
 }
-_TTS: dict[str, type[TTSProvider]] = {"stub": StubTTSProvider, "edge": EdgeTTSProvider}
+_TTS: dict[str, type[TTSProvider]] = {
+    "stub": StubTTSProvider,
+    "edge": EdgeTTSProvider,
+    "sarvam": SarvamTTSProvider,
+}
 
 
 class FallbackTTSProvider(TTSProvider):
@@ -57,17 +62,25 @@ class FallbackTTSProvider(TTSProvider):
     """
 
     name = "edge"
+    capabilities = EdgeTTSProvider.capabilities
 
     def __init__(self, primary: TTSProvider, fallback: TTSProvider) -> None:
         self.primary = primary
         self.fallback = fallback
 
-    def synthesize(self, text: str, *, voice: str | None = None, out_path: Path) -> Path:
+    def synthesize(
+        self,
+        text: str,
+        *,
+        voice: str | None = None,
+        options: TTSSynthesizeOptions | None = None,
+        out_path: Path,
+    ) -> Path:
         try:
-            return self.primary.synthesize(text, voice=voice, out_path=out_path)
+            return self.primary.synthesize(text, voice=voice, options=options, out_path=out_path)
         except ProviderError as exc:
             log.warning("edge-tts unavailable (%s); falling back to stub narration", exc)
-            return self.fallback.synthesize(text, voice=voice, out_path=out_path)
+            return self.fallback.synthesize(text, voice=voice, options=options, out_path=out_path)
 
 _TABLES = {
     "llm": _LLMS,

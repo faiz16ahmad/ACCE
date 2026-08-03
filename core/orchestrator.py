@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 from memory.store import ArtifactStore
 
-from .models import JobContext, JobStatus, ProgressEvent, ProgressStatus, StageResult, UserInput
+from .models import JobContext, JobStatus, Locale, Narrator, ProgressEvent, ProgressStatus, StageResult, UserInput
 from .stages import Stage
 
 if TYPE_CHECKING:
@@ -35,11 +35,15 @@ class PipelineOrchestrator:
         retries: int = 2,
         on_progress: ProgressCallback | None = None,
         output_root: Path = Path("out"),
+        locale_resolver: Callable[[str], Locale] | None = None,
+        narrator_resolver: Callable[[str], Narrator] | None = None,
     ) -> None:
         self.modules = dict(modules)
         self.retries = retries
         self.on_progress = on_progress
         self.output_root = Path(output_root)
+        self.locale_resolver = locale_resolver
+        self.narrator_resolver = narrator_resolver
 
     def run(self, job_input: UserInput, *, job_id: str | None = None, store: ArtifactStore | None = None) -> JobContext:
         job_id = job_id or f"job-{uuid.uuid4().hex[:12]}"
@@ -47,6 +51,18 @@ class PipelineOrchestrator:
         ctx = JobContext(
             job_id=job_id,
             input=job_input,
+            # Language resolves once here (a simple radio pick → the rich
+            # Locale + default Narrator); stages read ctx.locale, never parse.
+            locale=(
+                self.locale_resolver(job_input.language)
+                if self.locale_resolver
+                else Locale(language=job_input.language)
+            ),
+            narrator=(
+                self.narrator_resolver(job_input.language)
+                if self.narrator_resolver
+                else Narrator()
+            ),
             status=JobStatus.RUNNING,
             store=store,
             started_at=time.time(),

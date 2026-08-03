@@ -7,6 +7,14 @@ export interface UserInputDto {
   instructions?: string[];
   duration?: number | null;
   style?: string | null;
+  language?: string;
+}
+
+/** `GET /api/languages` entry — the radio options in the Generate flow. */
+export interface LanguageDto {
+  code: string;
+  native_name: string;
+  english_name: string;
 }
 
 export interface ArtifactWrittenDto {

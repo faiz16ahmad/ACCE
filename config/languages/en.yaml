@@ -1,0 +1,11 @@
+code: en
+native_name: English
+english_name: English
+script: latin
+words_per_minute: 150
+punctuation: []
+readability: flesch
+tts_preference: [edge, stub]
+default_voice: en-US-AriaNeural
+retrieval_language: en
+burn_font: ""

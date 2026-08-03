@@ -17,11 +17,12 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 from config.settings import AudioConfig, MusicConfig
 from core.errors import InputValidationError
-from core.models import Artifact, JobContext, StageResult
+from core.models import Artifact, JobContext, Locale, Narrator, StageResult
 from core.stages import Stage
 from memory.cache import DiskCache
 from providers.base import LLMProvider, TTSProvider
@@ -88,6 +89,9 @@ class DefaultAudioModule(AudioModule):
         ffmpeg_path: str | None = None,
         llm: LLMProvider | None = None,
         music_config: MusicConfig | None = None,
+        tts_resolver: Callable[[Locale, Narrator], TTSProvider] | None = None,
+        subtitle_punctuation_resolver: Callable[[Locale], tuple[str, ...]] | None = None,
+        subtitle_script_resolver: Callable[[Locale], str] | None = None,
     ) -> None:
         self.tts = tts
         self.music = music
@@ -98,6 +102,24 @@ class DefaultAudioModule(AudioModule):
         self.ffmpeg_path = ffmpeg_path or (config.ffmpeg_path if config else None) or "ffmpeg"
         self.llm = llm
         self.music_config = music_config or MusicConfig()
+        # Per-job TTS selection (frozen §7): when set, the narration provider is
+        # resolved from ctx.locale/ctx.narrator in run(); `tts` stays the
+        # static fallback used by tests.
+        self.tts_resolver = tts_resolver
+        self.subtitle_punctuation_resolver = subtitle_punctuation_resolver
+        self.subtitle_script_resolver = subtitle_script_resolver
+
+    def _subtitle_punctuation(self, locale: Locale) -> tuple[str, ...]:
+        """Pack sentence terminators (Hindi: danda) so subtitles split correctly."""
+        if self.subtitle_punctuation_resolver is None:
+            return ()
+        return tuple(self.subtitle_punctuation_resolver(locale))
+
+    def _subtitle_script(self, locale: Locale) -> str:
+        """Word-counting tokenizer for the subtitle script (latin | devanagari)."""
+        if self.subtitle_script_resolver is None:
+            return "latin"
+        return self.subtitle_script_resolver(locale)
 
     def validate_input(self, ctx: JobContext) -> None:
         result = ctx.results.get(Stage.SCENES)
@@ -110,9 +132,12 @@ class DefaultAudioModule(AudioModule):
         if ctx.store is None:
             raise RuntimeError("JobContext.store is not set — run through the orchestrator")
 
-        # 1. Narration (the clock)
+        # 1. Narration (the clock) — TTS resolved per job (§5/§7): the module
+        #    never knows which provider speaks; voice comes from the Narrator.
         ctx.progress("Generating narration...")
-        narration_tracks, written = self._narration(ctx, plan)
+        tts = self.tts_resolver(ctx.locale, ctx.narrator) if self.tts_resolver else self.tts
+        voice = getattr(tts, "voice", None) or self.voice
+        narration_tracks, written = self._narration(ctx, plan, tts, voice)
         for i, track in enumerate(narration_tracks, 1):
             ctx.progress(f"Scene {i} narration: {track.duration:.1f}s")
         narration_total = sum(track.duration or 0.0 for track in narration_tracks)
@@ -177,7 +202,9 @@ class DefaultAudioModule(AudioModule):
             for i, t in enumerate(narration_tracks)
             if t.duration
         }
-        cues = build_cues(plan, narr_durations)
+        punctuation = self._subtitle_punctuation(ctx.locale)
+        script = self._subtitle_script(ctx.locale)
+        cues = build_cues(plan, narr_durations, punctuation, script)
         srt_path = ctx.store.resolve(self.name, "subtitles.srt")
         srt_path.write_text(cues_to_srt(cues), encoding="utf-8")
         written.append(Artifact(stage=self.name.value, name=srt_path.name, path=srt_path))
@@ -202,7 +229,7 @@ class DefaultAudioModule(AudioModule):
                 music_title=music_track.title if music_track else None,
                 style_genre=genre_hint,
                 engine=self.config.engine,
-                voice=self.voice,
+                voice=voice,
                 cue_count=len(cues),
             ),
             cues=cues,
@@ -215,20 +242,23 @@ class DefaultAudioModule(AudioModule):
 
     # -- internal stages ------------------------------------------------------
 
-    def _narration(self, ctx: JobContext, plan: ScenePlan) -> tuple[list[AudioTrack], list[Artifact]]:
+    def _narration(
+        self, ctx: JobContext, plan: ScenePlan, tts: TTSProvider, voice: str
+    ) -> tuple[list[AudioTrack], list[Artifact]]:
         tracks: list[AudioTrack] = []
         written: list[Artifact] = []
         for scene in plan.scenes:
-            suffix = ".mp3" if getattr(self.tts, "name", "stub") == "edge" else ".txt"
+            suffix = f".{tts.output_suffix}"  # provider-declared, not name == "edge"
             out = ctx.store.resolve(self.name, f"narration_scene_{scene.scene:02d}{suffix}")
-            self.tts.synthesize(scene.narration, voice=self.voice, out_path=out)
+            tts.synthesize(scene.narration, voice=voice, out_path=out)
             # Measure actual TTS output duration, not the LLM estimate.
             actual_dur = _measure_audio_duration(out, self.ffmpeg_path)
             dur = actual_dur if actual_dur > 0 else float(scene.duration)
+            provider = getattr(tts, "last_used_name", None) or tts.name  # observability only
             tracks.append(
                 AudioTrack(
                     kind="narration",
-                    provider=self.tts.name,
+                    provider=provider,
                     title=f"narration scene {scene.scene}",
                     local_path=out,
                     duration=dur,

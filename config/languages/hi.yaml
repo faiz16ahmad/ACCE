@@ -1,0 +1,11 @@
+code: hi
+native_name: हिन्दी
+english_name: Hindi
+script: devanagari
+words_per_minute: 140
+punctuation: ["।"]
+readability: none
+tts_preference: [sarvam, edge, stub]
+default_voice: shubh
+retrieval_language: en
+burn_font: "Noto Sans Devanagari"

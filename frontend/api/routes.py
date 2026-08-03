@@ -31,11 +31,25 @@ class JobRequest(BaseModel):
     instructions: list[str] = Field(default_factory=list)
     duration: int | None = Field(default=None, ge=10)
     style: str | None = None
+    language: str = "en"  # resolves to a Locale + Narrator (see config/languages)
 
 
 @router.get("/health")
 def health() -> dict:
     return {"status": "ok", "app": settings.app_name, "version": settings.app_version}
+
+
+@router.get("/languages")
+def list_languages() -> dict:
+    """Installed language packs — the radio options in the Generate flow."""
+    from config.languages import registry
+
+    return {
+        "languages": [
+            {"code": p.code, "native_name": p.native_name, "english_name": p.english_name}
+            for p in registry.languages()
+        ]
+    }
 
 
 @router.post("/jobs", status_code=201)

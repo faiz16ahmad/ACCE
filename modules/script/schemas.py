@@ -28,7 +28,9 @@ class ScriptMetrics(BaseModel):
     word_count: int
     estimated_duration: float  # seconds
     words_per_minute: int
-    readability: ReadabilityStats
+    # None when the language's pack says `readability: none` (Flesch is
+    # English-only; e.g. Hindi). Quality skips the readability check then.
+    readability: ReadabilityStats | None = None
     duration_match: float | None = None  # 0..1; None when no duration requested
 
 
@@ -38,6 +40,7 @@ class ScriptMetadata(BaseModel):
     estimated_duration: float = 0.0
     word_count: int = 0
     generated_by: str = "template"  # "template" | "llm:<provider>"
+    language: str = "en"
 
 
 class ScriptOutput(BaseModel):
@@ -46,5 +49,6 @@ class ScriptOutput(BaseModel):
     ending: str
     narration: list[NarrationBlock] = Field(default_factory=list)
     style: str = "explainer"
+    language: str = "en"  # script_language from ctx.locale
     metrics: ScriptMetrics | None = None
     metadata: ScriptMetadata | None = None

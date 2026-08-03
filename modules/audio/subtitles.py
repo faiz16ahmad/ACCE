@@ -17,34 +17,50 @@ from ..scenes.schemas import ScenePlan
 from ..script.metrics import count_words
 from .schemas import AudioCue
 
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_BASE_TERMS = (".", "!", "?")
 
 
-def split_sentences(text: str) -> list[str]:
+def split_sentences(text: str, punctuation: tuple[str, ...] = ()) -> list[str]:
+    """Split narration into subtitle-sized sentences.
+
+    Terminators are the usual .!? plus the language pack's extra punctuation
+    (Hindi: the danda ।). Defaults to English-only so the contract is unchanged
+    for existing callers.
+    """
     text = " ".join(text.split())
     if not text:
         return []
-    return [sentence.strip() for sentence in _SENTENCE_SPLIT_RE.split(text) if sentence.strip()]
+    terms = "".join(re.escape(p) for p in (*_BASE_TERMS, *punctuation))
+    pattern = re.compile(rf"(?<=[{terms}])\s+")
+    return [sentence.strip() for sentence in pattern.split(text) if sentence.strip()]
 
 
 def build_cues(
     scenes: ScenePlan,
     narration_durations: dict[int, float] | None = None,
+    punctuation: tuple[str, ...] = (),
+    script: str = "latin",
 ) -> list[AudioCue]:
     """Sentence-timed cues from the scene narration, back-to-back.
 
     *narration_durations* maps scene_number → actual measured duration.
     When provided, these override the LLM estimates for subtitle timing.
+    *punctuation* carries the language pack's extra sentence terminators
+    (e.g. the Hindi danda) so Devanagari narration splits correctly.
+    *script* is the tokenizer name ("latin" | "devanagari") — the word counts
+    that proportion each scene's duration across its sentences must use the
+    narration's script, or non-Latin text counts as zero words and every cue
+    collapses to zero duration.
     """
     narration_durations = narration_durations or {}
     cues: list[AudioCue] = []
     cursor = 0.0
     cue_no = 0
     for scene in scenes.scenes:
-        sentences = split_sentences(scene.narration_segment)
+        sentences = split_sentences(scene.narration_segment, punctuation)
         if not sentences:
             continue
-        words = [count_words(sentence) for sentence in sentences]
+        words = [count_words(sentence, script) for sentence in sentences]
         total_words = sum(words) or 1
         scene_duration = narration_durations.get(
             scene.scene_number, scene.estimated_duration

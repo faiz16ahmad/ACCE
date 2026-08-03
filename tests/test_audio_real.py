@@ -19,6 +19,7 @@ from modules.audio.default import DefaultAudioModule
 from modules.audio.engine import StubAudioEngine
 from modules.audio.subtitles import build_cues, cues_to_srt, split_sentences
 from modules.production.srt import parse_srt
+from modules.scenes.schemas import Scene, ScenePlan
 from providers.base import MusicProvider
 from providers.local_music import LocalMusicProvider
 from providers.models import MusicHit
@@ -177,3 +178,26 @@ def test_build_cues_from_scene_timing(scenes):
     assert len(cues) == 2  # one sentence per scene in the fixture
     assert cues[1].end == pytest.approx(40.0)  # 2 scenes x 20s back-to-back
     assert cues_to_srt(cues).count("\n\n") == len(cues) - 1
+
+
+def test_build_cues_hindi_uses_devanagari_word_counts():
+    """Devanagari text must count with the devanagari tokenizer, or every cue
+    collapses to zero duration and no subtitles ever show (regression)."""
+    plan = ScenePlan(
+        scenes=[
+            Scene(
+                scene_number=1,
+                narration_segment="तंत्रिका नेटवर्क कैसे काम करते हैं। यह बहुत आसान है।",
+                estimated_duration=8.0,
+            ),
+            Scene(
+                scene_number=2,
+                narration_segment="अब हम उदाहरण देखेंगे। सरल उदाहरण।",
+                estimated_duration=6.0,
+            ),
+        ]
+    )
+    cues = build_cues(plan, {1: 9.0, 2: 5.5}, ("।",), script="devanagari")
+    assert len(cues) == 4  # danda splits each scene into two sentences
+    assert all(c.end > c.start for c in cues)  # no zero-length cues
+    assert cues[-1].end == pytest.approx(14.5)  # full back-to-back narration span

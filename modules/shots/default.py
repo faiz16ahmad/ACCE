@@ -39,14 +39,24 @@ def extract_json(text: str) -> dict:
     return json.loads(text[start : end + 1])
 
 
-def build_shot_prompt(scenes: ScenePlan) -> str:
+def build_shot_prompt(scenes: ScenePlan, language: str = "en") -> str:
     scene_lines = "\n".join(
         f"Scene {scene.scene_number} (rhythm {scene.rhythm}): {scene.narration_segment}"
         for scene in scenes.scenes
     )
+    language_directive = ""
+    if language != "en":
+        # Narration is in the target language, but retrieval stays English (§4):
+        # stock providers index English metadata. A directive, never a branch.
+        language_directive = (
+            f"The video's narration language is {language!r}. "
+            "Keep every search_query in English (stock providers index English); "
+            "visual_description may be in the narration language.\n"
+        )
     return (
         "Plan the shots for a video from its scene narration.\n"
         f"{scene_lines}\n\n"
+        f"{language_directive}"
         "Return ONLY JSON: {\"shots\": [{\"scene\": <scene_number>, \"purpose\": str, "
         "\"visual_description\": str, \"search_queries\": [str, ...], "
         "\"content_kind\": \"stock_video|stock_image|text|chart|map\", "
@@ -73,7 +83,7 @@ class DefaultShotsModule(ShotsModule):
         style = ctx.input.style or "explainer"
         ctx.progress("Planning shots...")
         if self.llm is not None and self.llm.name != "stub":
-            proposed = self._llm_plan(scenes)
+            proposed = self._llm_plan(scenes, language=ctx.locale.language)
         else:
             proposed = plan_shots(scenes, topic=ctx.input.topic, style=style)
         plan = normalize_shot_plan(proposed, scenes, self.config, topic=ctx.input.topic)
@@ -91,9 +101,9 @@ class DefaultShotsModule(ShotsModule):
             artifacts_written=[self._save(ctx, "shot_plan.json", plan)],
         )
 
-    def _llm_plan(self, scenes: ScenePlan) -> list[dict]:
+    def _llm_plan(self, scenes: ScenePlan, language: str = "en") -> list[dict]:
         system = "You are a video shot planner. Return ONLY valid JSON matching the requested schema."
-        raw = self.llm.complete(build_shot_prompt(scenes), system=system)
+        raw = self.llm.complete(build_shot_prompt(scenes, language=language), system=system)
         try:
             entries = extract_json(raw)["shots"]
         except (KeyError, ValueError, TypeError, json.JSONDecodeError) as exc:

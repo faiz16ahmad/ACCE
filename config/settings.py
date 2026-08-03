@@ -64,9 +64,11 @@ class MusicConfig(BaseModel):
 
 
 class TTSConfig(BaseModel):
-    provider: str = "stub"  # "stub" | "edge"
+    provider: str = "stub"  # "stub" | "edge" | "auto" (language pack decides)
     # Edge TTS default voice (Microsoft neural); stub ignores the name.
     voice: str = "en-US-AriaNeural"
+    # Per-provider credentials for TTS plugins, e.g. {"elevenlabs": "..."}.
+    api_keys: dict[str, str] = {}
 
 
 class AudioConfig(BaseModel):

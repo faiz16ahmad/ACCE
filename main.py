@@ -26,7 +26,9 @@ def _console_progress(event) -> None:
 def cmd_generate(args) -> int:
     settings = Settings()
     orch = build_orchestrator(settings, on_progress=_console_progress)
-    ui = UserInput(topic=args.topic, instructions=args.instruction, duration=args.duration, style=args.style)
+    ui = UserInput(
+        topic=args.topic, instructions=args.instruction, duration=args.duration, style=args.style, language=args.language
+    )
     print(f"\nGenerating {ui.topic!r}\n")
     ctx = orch.run(ui)
     print(f"\njob {ctx.job_id}: {ctx.status.value}")
@@ -75,6 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
     gen.add_argument("--instruction", action="append", default=[], help="instruction line (repeatable)")
     gen.add_argument("--duration", type=int, default=None, help="target video length in seconds")
     gen.add_argument("--style", default=None)
+    gen.add_argument("--language", default="en", help="narration/subtitle language code (e.g. hi)")
     gen.set_defaults(func=cmd_generate)
 
     st = sub.add_parser("status", help="show a finished job's results")

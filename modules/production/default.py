@@ -13,11 +13,12 @@ consumes only the manifest.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from config.settings import ProductionConfig, TimelineConfig
 from core.errors import InputValidationError
-from core.models import Artifact, JobContext, StageResult
+from core.models import Artifact, JobContext, Locale, StageResult
 from core.stages import Stage
 
 from ..audio.schemas import AudioOutput
@@ -41,10 +42,18 @@ class DefaultProductionModule(ProductionModule):
         config: ProductionConfig | None = None,
         renderer: Renderer | None = None,
         timeline_config: TimelineConfig | None = None,
+        burn_font_resolver: Callable[[Locale], str] | None = None,
     ) -> None:
         self.config = config or ProductionConfig()
         self.renderer = renderer or build_renderer(self.config)
         self.timeline_config = timeline_config or TimelineConfig()
+        # Subtitle burn-in font from the language pack (§6); empty → renderer default.
+        self.burn_font_resolver = burn_font_resolver
+
+    def _burn_font(self, ctx: JobContext) -> str:
+        if self.burn_font_resolver is None:
+            return ""
+        return self.burn_font_resolver(ctx.locale) or ""
 
     def validate_input(self, ctx: JobContext) -> None:
         for stage in (Stage.SCENES, Stage.MEDIA, Stage.AUDIO):
@@ -81,7 +90,9 @@ class DefaultProductionModule(ProductionModule):
         subtitle_path = audio.subtitle_path
         if subtitle_path is None or not Path(subtitle_path).exists():
             subtitle_path = ctx.store.save_text(self.name, "subtitles.srt", build_srt(cues)).path
-        ass_path = ctx.store.save_text(self.name, "subtitles.ass", build_ass(cues)).path
+        font = self._burn_font(ctx)
+        ass_text = build_ass(cues, font=font) if font else build_ass(cues)
+        ass_path = ctx.store.save_text(self.name, "subtitles.ass", ass_text).path
 
         # 3. Render manifest — the renderer's complete input.
         manifest = build_manifest(timeline, scenes, media, audio, self.config, ass_path, shot_plan)

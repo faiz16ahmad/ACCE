@@ -32,6 +32,37 @@ class ProgressStatus(StrEnum):
     RETRYING = "retrying"
 
 
+class Locale(BaseModel):
+    """Single per-job language configuration.
+
+    Language ONLY — no voice, no narrator identity (who speaks is `Narrator`).
+    The five dimensions collapse to `language` in V1; the cross-language future
+    (EN narration + HI subtitles, bilingual subtitles, …) is just these fields
+    disagreeing.
+    """
+
+    language: str = "en"  # user-facing primary code (the radio value)
+    script_language: str = "en"  # what narration text is written in
+    narration_language: str = "en"  # what TTS speaks
+    subtitle_language: str = "en"  # SRT/ASS burn-in text
+    metadata_language: str = "en"  # title / description / summary
+    retrieval_language: str = "en"  # visual search-query language (default English)
+
+
+class Narrator(BaseModel):
+    """Who speaks the narration — voice identity, separate from `Locale`.
+
+    The growth point for narrator selection, custom voices, and voice cloning;
+    adding a voice field to `Locale` would be an architectural change.
+    """
+
+    voice_id: str | None = None  # None → the language pack's default voice
+    provider: str | None = None  # None → the router's choice for the language
+    emotion: str | None = None  # style preset, if the provider supports it
+    rate: float | None = None  # speaking-rate multiplier
+    clone_source: str | None = None  # future voice cloning reference
+
+
 class UserInput(BaseModel):
     """The single accepted input shape for a generation job."""
 
@@ -39,6 +70,7 @@ class UserInput(BaseModel):
     instructions: list[str] = Field(default_factory=list)
     duration: int | None = Field(default=None, ge=10)  # target seconds
     style: str | None = None
+    language: str = "en"  # resolved into a `Locale` by the factory/orchestrator
 
 
 class Artifact(BaseModel):
@@ -83,6 +115,8 @@ class JobContext(BaseModel):
 
     job_id: str
     input: UserInput
+    locale: Locale = Field(default_factory=Locale)
+    narrator: Narrator = Field(default_factory=Narrator)
     status: JobStatus = JobStatus.PENDING
     current_stage: Stage | None = None
     results: dict[Stage, StageResult] = Field(default_factory=dict)

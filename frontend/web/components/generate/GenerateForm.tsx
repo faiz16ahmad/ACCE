@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { api } from "@/lib/api";
+import type { LanguageDto } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Field, Input, Select, Textarea } from "@/components/ui/Field";
@@ -19,8 +20,19 @@ export function GenerateForm() {
   const [duration, setDuration] = useState<number>(120);
   const [style, setStyle] = useState("explainer");
   const [instructions, setInstructions] = useState("");
+  const [language, setLanguage] = useState("en");
+  const [languages, setLanguages] = useState<LanguageDto[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .getLanguages()
+      .then(({ languages }) => setLanguages(languages))
+      .catch(() => {
+        /* backend not up yet — the form still works with the default pick */
+      });
+  }, []);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -32,6 +44,7 @@ export function GenerateForm() {
         topic: topic.trim(),
         duration,
         style,
+        language,
         instructions: instructions
           .split("\n")
           .map((line) => line.trim())
@@ -87,6 +100,28 @@ export function GenerateForm() {
               </Select>
             </Field>
           </div>
+
+          <Field
+            label="Language"
+            htmlFor="language"
+            hint="The narration and subtitles are produced in this language. Visuals stay English."
+          >
+            <Select
+              id="language"
+              value={language}
+              onChange={(event) => setLanguage(event.target.value)}
+            >
+              {languages.length === 0 ? (
+                <option value="en">English</option>
+              ) : (
+                languages.map((lang) => (
+                  <option key={lang.code} value={lang.code}>
+                    {lang.native_name} — {lang.english_name}
+                  </option>
+                ))
+              )}
+            </Select>
+          </Field>
 
           <Field
             label="Instructions"
